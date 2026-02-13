@@ -8,7 +8,8 @@ note_status:
   - {{note_status}}
 tags:
 {{tags_block}}
-format: {{format}}
+format:
+  - {{format}}
 title: {{title}}
 creator: {{creator}}
 year: {{year}}

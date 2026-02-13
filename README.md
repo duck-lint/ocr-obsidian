@@ -178,6 +178,12 @@ scripts/dev_smoke_test.ps1 -BookConfig configs/books/sample_book.yaml
 
 The script runs OCR -> highlight detection -> span generation -> note emission with `--max-pages 3`.
 
+Frontmatter rendering smoke check:
+
+```powershell
+python scripts/frontmatter_smoke_check.py
+```
+
 ## Current TODOs
 
 - PDF ingestion support (v0 currently supports image folders only).

@@ -6,26 +6,94 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .artifacts import write_json_file, write_text_file
 from .config import load_book_config
 from .textmap import load_pages_jsonl
 from .utils_paths import find_latest_run_id
 
 
-ALLOWED_YAML_KEYS = {
-    "uuid",
-    "note_version",
-    "YAML_schema_version",
-    "note_type",
-    "note_status",
-    "tags",
-    "format",
-    "title",
+OBSIDIAN_SCHEMA_KEYS = {
+    "address",
+    "aliases",
+    "birthday",
+    "book_read_today",
+    "bridge_applicability_scope",
+    "bridge_applied",
+    "bridge_broken",
+    "bridge_conditions",
+    "bridge_isomorphism",
+    "bridge_justification",
+    "bridge_methods",
+    "bridge_preservation",
+    "bridge_required",
+    "bridge_uuids",
+    "canonical_name",
+    "cash_out",
     "creator",
-    "year",
+    "dislikes",
+    "dream_location",
+    "dream_lucidity",
+    "dream_motif",
+    "dream_motif_valence",
+    "email",
+    "entity_type",
+    "first_met",
+    "format",
+    "from_mode",
+    "from_register",
+    "hypnagogic_resonance",
+    "interface",
+    "iso_broken",
+    "iso_justification",
+    "iso_structure",
+    "layer",
+    "likes",
+    "note_status",
+    "note_type",
+    "note_version",
+    "occupation",
+    "origin",
+    "phone",
+    "pillar",
     "publisher_studio",
+    "quarantine_reasons",
+    "racing_thoughts_while_awake",
+    "ran_script_when_racing",
+    "ran_script_yesterday",
+    "reactivity",
+    "recall_ability",
     "register",
+    "register_mode",
+    "relationship",
+    "revision_triggers",
+    "rhetoric_allowed",
+    "rhetorical_device",
+    "root",
+    "speculation_quarantine",
+    "stop_rule",
+    "tags",
+    "temporal_pace",
+    "tension_type",
+    "title",
+    "to_mode",
+    "to_register",
+    "transition_attempted",
+    "unity_level",
+    "uuid",
+    "vector_direction",
+    "YAML_schema_version",
+    "year",
 }
+
+_FRONTMATTER_BLOCK_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
+_TOP_LEVEL_KEY_RE = re.compile(r"^([A-Za-z0-9_]+)\s*:")
+
+
+def yaml_quote(value: str) -> str:
+    """Return a YAML-safe double-quoted scalar."""
+    return json.dumps("" if value is None else str(value), ensure_ascii=False)
 
 
 def _sanitize_filename(value: str) -> str:
@@ -46,8 +114,8 @@ def _build_tags_block(tags: list[str]) -> str:
         if tag not in unique:
             unique.append(tag)
     if not unique:
-        return "  - ingest/highlight_excerpt"
-    return "\n".join(f"  - {tag}" for tag in unique)
+        return f"  - {yaml_quote('ingest/highlight_excerpt')}"
+    return "\n".join(f"  - {yaml_quote(tag)}" for tag in unique)
 
 
 def _collect_quote(lines: list[dict[str, Any]], line_ids: list[str]) -> str:
@@ -76,6 +144,70 @@ def _source_block(
             f"- config_hash: {config_hash}",
         ]
     )
+
+
+def _extract_frontmatter_block(note_content: str) -> str:
+    match = _FRONTMATTER_BLOCK_RE.search(note_content)
+    if not match:
+        raise RuntimeError("Rendered note is missing a valid frontmatter block delimited by ---.")
+    return match.group(1)
+
+
+def _extract_top_level_frontmatter_keys(frontmatter_block: str) -> set[str]:
+    keys: set[str] = set()
+    for line in frontmatter_block.splitlines():
+        if not line:
+            continue
+        if line.startswith((" ", "\t", "-")):
+            continue
+        match = _TOP_LEVEL_KEY_RE.match(line)
+        if match:
+            keys.add(match.group(1))
+    return keys
+
+
+def _validate_frontmatter_schema_keys(note_content: str) -> None:
+    frontmatter = _extract_frontmatter_block(note_content)
+    keys = _extract_top_level_frontmatter_keys(frontmatter)
+    invalid = sorted(key for key in keys if key not in OBSIDIAN_SCHEMA_KEYS)
+    if invalid:
+        raise RuntimeError(
+            "Rendered note contains frontmatter keys outside OBSIDIAN_SCHEMA_KEYS: "
+            + ", ".join(invalid)
+        )
+
+
+def _assert_frontmatter_yaml(note_content: str) -> None:
+    frontmatter = _extract_frontmatter_block(note_content)
+    try:
+        parsed = yaml.safe_load(frontmatter)
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Rendered note frontmatter is not valid YAML: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Rendered note frontmatter did not parse into a mapping.")
+
+
+def smoke_check_note_render(template_path: Path = Path("templates/obsidian_note.md")) -> None:
+    template = template_path.read_text(encoding="utf-8")
+    replacements = {
+        "uuid": yaml_quote("00000000-0000-0000-0000-000000000000"),
+        "note_version": yaml_quote("v0.1.3"),
+        "YAML_schema_version": yaml_quote("v0.1.2"),
+        "note_type": yaml_quote("literature_review"),
+        "note_status": yaml_quote("inbox"),
+        "tags_block": _build_tags_block(['book/sample_book', 'quote "escaped" check']),
+        "format": yaml_quote("book"),
+        "title": yaml_quote('Example "Title"'),
+        "creator": yaml_quote('Creator "Name"'),
+        "year": yaml_quote("1900"),
+        "publisher_studio": yaml_quote('Publisher "Studio"'),
+        "register": yaml_quote("public"),
+        "quote_text": "Example quote line.",
+        "source_block": "- page_num: 1\n- span_id: p1_s1",
+    }
+    rendered = _render_template(template=template, replacements=replacements)
+    _validate_frontmatter_schema_keys(rendered)
+    _assert_frontmatter_yaml(rendered)
 
 
 def run_emit_obsidian(args) -> int:
@@ -134,62 +266,25 @@ def run_emit_obsidian(args) -> int:
                 config_hash=config_hash,
             )
             replacements = {
-                "uuid": note_uuid,
-                "note_version": book.note_version,
-                "YAML_schema_version": book.yaml_schema_version,
-                "note_type": book.note_type,
-                "note_status": book.note_status,
+                "uuid": yaml_quote(note_uuid),
+                "note_version": yaml_quote(book.note_version),
+                "YAML_schema_version": yaml_quote(book.yaml_schema_version),
+                "note_type": yaml_quote(book.note_type),
+                "note_status": yaml_quote(book.note_status),
                 "tags_block": tags_block,
-                "format": book.format,
-                "title": title,
-                "creator": book.creator,
-                "year": book.year,
-                "publisher_studio": book.publisher_studio,
-                "register": book.register,
+                "format": yaml_quote(book.format),
+                "title": yaml_quote(title),
+                "creator": yaml_quote(book.creator),
+                "year": yaml_quote(book.year),
+                "publisher_studio": yaml_quote(book.publisher_studio),
+                "register": yaml_quote(book.register),
                 "quote_text": quote_text,
                 "source_block": source_block,
             }
-            unexpected_keys = set(replacements).difference(
-                {
-                    "uuid",
-                    "note_version",
-                    "YAML_schema_version",
-                    "note_type",
-                    "note_status",
-                    "tags_block",
-                    "format",
-                    "title",
-                    "creator",
-                    "year",
-                    "publisher_studio",
-                    "register",
-                    "quote_text",
-                    "source_block",
-                }
-            )
-            if unexpected_keys:
-                raise RuntimeError(f"Internal template key mismatch: {unexpected_keys}")
-
-            # Enforce schema safety by using a fixed replacement set tied to known YAML keys.
-            if not ALLOWED_YAML_KEYS.issuperset(
-                {
-                    "uuid",
-                    "note_version",
-                    "YAML_schema_version",
-                    "note_type",
-                    "note_status",
-                    "tags",
-                    "format",
-                    "title",
-                    "creator",
-                    "year",
-                    "publisher_studio",
-                    "register",
-                }
-            ):
-                raise RuntimeError("Allowed YAML key set is misconfigured.")
-
             note_content = _render_template(template=template, replacements=replacements)
+            _validate_frontmatter_schema_keys(note_content)
+            _assert_frontmatter_yaml(note_content)
+
             write_text_file(
                 note_path,
                 note_content,
