@@ -100,3 +100,18 @@ def safe_relpath(path: Path, root: Path) -> str:
         return path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         return path.name
+
+
+def find_latest_run_id(
+    runs_root: Path,
+    book_id: str,
+    *,
+    required_filename: str,
+) -> str | None:
+    if not runs_root.exists():
+        return None
+    candidate_dirs = [p for p in runs_root.iterdir() if p.is_dir()]
+    for run_dir in sorted(candidate_dirs, key=lambda p: p.name, reverse=True):
+        if list(run_dir.glob(f"book_{book_id}/page_*/{required_filename}")):
+            return run_dir.name
+    return None
