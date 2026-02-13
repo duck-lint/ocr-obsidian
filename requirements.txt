@@ -1,0 +1,5 @@
+PyYAML
+Pillow
+numpy
+pytesseract
+opencv-python-headless

@@ -4,11 +4,13 @@ import argparse
 import traceback
 from pathlib import Path
 
+from .artifacts import write_text_file
 from .config import ConfigError
 from .emit_obsidian import run_emit_obsidian
-from .highlights import run_detect_highlights
+from .highlights import HighlightDependencyError, run_detect_highlights
 from .ocr import OcrDependencyError, run_ocr
 from .spans import run_make_spans
+from .textmap import load_pages_jsonl
 from .utils_paths import MissingPathError, OverwriteError
 
 
@@ -49,6 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     spans_parser = subparsers.add_parser("make-spans", help="Create text spans from highlights + OCR lines.")
     _add_common_flags(spans_parser)
     spans_parser.add_argument("--runs", type=Path, default=Path("runs"), help="Run artifacts root.")
+    spans_parser.add_argument("--corpus", type=Path, default=Path("corpus"), help="Corpus root.")
     spans_parser.add_argument("--k-before", type=int, default=2, help="Context lines to include before triggers.")
     spans_parser.add_argument("--k-after", type=int, default=2, help="Context lines to include after triggers.")
     spans_parser.set_defaults(handler=run_make_spans)
@@ -56,7 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
     emit_parser = subparsers.add_parser("emit-obsidian", help="Emit Obsidian markdown notes from spans.")
     _add_common_flags(emit_parser)
     emit_parser.add_argument("--runs", type=Path, default=Path("runs"), help="Run artifacts root.")
+    emit_parser.add_argument("--corpus", type=Path, default=Path("corpus"), help="Corpus root.")
     emit_parser.add_argument("--vault", type=Path, default=None, help="Override vault output path.")
+    emit_parser.add_argument(
+        "--template",
+        type=Path,
+        default=Path("templates/obsidian_note.md"),
+        help="Markdown note template path.",
+    )
     emit_parser.add_argument(
         "--sidecar-json",
         dest="sidecar_json",
@@ -80,8 +90,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_export_book_text(_args) -> int:
-    raise NotImplementedError("Book text export is not implemented yet.")
+def run_export_book_text(args) -> int:
+    from .config import load_book_config
+
+    book, _pipeline, _config_hash = load_book_config(args.book, args.pipeline)
+    corpus_root = Path(args.out)
+    pages_path = corpus_root / "books" / book.book_id / "pages.jsonl"
+    pages = load_pages_jsonl(pages_path)
+    if not pages:
+        raise RuntimeError(f"No pages found in canonical corpus: {pages_path}")
+
+    text_parts: list[str] = []
+    for page in sorted(pages, key=lambda p: int(p["page_num"])):
+        page_num = int(page["page_num"])
+        lines = page.get("lines") or []
+        page_text = "\n".join(str(line.get("text", "")) for line in lines if str(line.get("text", "")).strip())
+        text_parts.append(f"# Page {page_num}\n{page_text}".strip())
+
+    output_path = corpus_root / "books" / book.book_id / "book.txt"
+    corpus_overwrite = "always" if args.overwrite == "always" else "never"
+    write_text_file(
+        output_path,
+        "\n\n".join(text_parts).strip() + "\n",
+        dry_run=args.dry_run,
+        overwrite=corpus_overwrite,
+        run_root=None,
+    )
+    print(f"Exported book text to {output_path}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,6 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     except OcrDependencyError as exc:
         print(f"ERROR: {exc}")
         return 5
+    except HighlightDependencyError as exc:
+        print(f"ERROR: {exc}")
+        return 6
     except NotImplementedError as exc:
         print(f"ERROR: {exc}")
         return 2

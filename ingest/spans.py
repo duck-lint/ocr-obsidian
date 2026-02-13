@@ -140,7 +140,7 @@ def run_make_spans(args) -> int:
 
     processed = 0
     for candidate_file in page_candidate_files:
-        payload = json.loads(candidate_file.read_text(encoding="utf-8"))
+        payload = json.loads(candidate_file.read_text(encoding="utf-8-sig"))
         page_num = int(payload["page_num"])
         page = page_map.get(page_num)
         if page is None:

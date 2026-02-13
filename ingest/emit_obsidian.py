@@ -105,7 +105,7 @@ def run_emit_obsidian(args) -> int:
 
     emitted = 0
     for span_file in span_files:
-        payload = json.loads(span_file.read_text(encoding="utf-8"))
+        payload = json.loads(span_file.read_text(encoding="utf-8-sig"))
         page_num = int(payload["page_num"])
         page = page_map.get(page_num)
         if page is None:
