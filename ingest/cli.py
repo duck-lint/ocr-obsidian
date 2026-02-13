@@ -4,10 +4,12 @@ import argparse
 import traceback
 from pathlib import Path
 
+from .config import ConfigError
 from .emit_obsidian import run_emit_obsidian
 from .highlights import run_detect_highlights
-from .ocr import run_ocr
+from .ocr import OcrDependencyError, run_ocr
 from .spans import run_make_spans
+from .utils_paths import MissingPathError, OverwriteError
 
 
 def _add_common_flags(parser: argparse.ArgumentParser) -> None:
@@ -88,6 +90,15 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return int(args.handler(args))
+    except (ConfigError, MissingPathError) as exc:
+        print(f"ERROR: {exc}")
+        return 3
+    except OverwriteError as exc:
+        print(f"ERROR: {exc}")
+        return 4
+    except OcrDependencyError as exc:
+        print(f"ERROR: {exc}")
+        return 5
     except NotImplementedError as exc:
         print(f"ERROR: {exc}")
         return 2
