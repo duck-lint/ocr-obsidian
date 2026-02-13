@@ -1,0 +1,15 @@
+book_id: sample_book
+title: Sample Title
+creator: Sample Creator
+year: "1900"
+format: book
+publisher_studio: Sample Publisher
+scans_path: ../../sample_data/sample_pages
+vault_out_path: ../../runs/obsidian_staging
+note_type: literature_review
+note_status: inbox
+note_version: v0.1.3
+YAML_schema_version: v0.1.2
+register: public
+tags:
+  - book/sample_book

@@ -1,0 +1,17 @@
+ocr:
+  line_y_tolerance_px: 14
+  language: eng
+  psm: 6
+
+highlights:
+  hsv_low: [15, 20, 80]
+  hsv_high: [95, 255, 255]
+  min_area: 120
+  kernel_size: 5
+
+spans:
+  k_before: 2
+  k_after: 2
+
+emit_obsidian:
+  sidecar_json_default: true
