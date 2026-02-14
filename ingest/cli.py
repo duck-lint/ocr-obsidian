@@ -10,6 +10,7 @@ from .emit_obsidian import run_emit_obsidian
 from .highlights import HighlightDependencyError, run_detect_highlights
 from .ocr import OcrDependencyError, run_ocr
 from .spans import run_make_spans
+from .sweep import run_sweep
 from .textmap import load_pages_jsonl
 from .utils_paths import MissingPathError, OverwriteError
 
@@ -86,6 +87,34 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_flags(export_parser)
     export_parser.add_argument("--out", type=Path, default=Path("corpus"), help="Corpus root.")
     export_parser.set_defaults(handler=run_export_book_text)
+
+    sweep_parser = subparsers.add_parser("sweep", help="Run deterministic QA sweep over emitted span sidecars.")
+    sweep_parser.add_argument("--corpus_dir", required=True, type=Path, help="Canonical corpus root.")
+    sweep_parser.add_argument("--sidecars_dir", required=True, type=Path, help="Directory containing *.span.json.")
+    sweep_parser.add_argument("--notes_dir", type=Path, default=None, help="Optional directory containing notes.")
+    sweep_parser.add_argument("--glob", default="*.span.json", help="Glob pattern under --sidecars_dir.")
+    sweep_parser.add_argument("--out_dir", required=True, type=Path, help="Directory to write QA reports.")
+    sweep_parser.add_argument("--max_items", type=int, default=None, help="Optional max number of sidecars.")
+    sweep_parser.add_argument("--dry_run", action="store_true", help="Print actions without writing files.")
+    sweep_parser.add_argument(
+        "--overwrite",
+        choices=["never", "if_same_run", "always"],
+        default="never",
+        help="Overwrite policy for report files. Default is fail-closed.",
+    )
+    sweep_parser.add_argument(
+        "--thresholds",
+        type=Path,
+        default=None,
+        help="Optional YAML/JSON threshold overrides.",
+    )
+    sweep_parser.add_argument("--fail_alpha_min", type=float, default=None)
+    sweep_parser.add_argument("--fail_conf_min", type=float, default=None)
+    sweep_parser.add_argument("--fail_garbage_max", type=float, default=None)
+    sweep_parser.add_argument("--warn_line_max", type=int, default=None)
+    sweep_parser.add_argument("--warn_char_max", type=int, default=None)
+    sweep_parser.add_argument("--warn_pipe_max", type=float, default=None)
+    sweep_parser.set_defaults(handler=run_sweep)
 
     return parser
 
