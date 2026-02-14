@@ -86,6 +86,12 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export-book-text", help="Export quick concatenated book text.")
     _add_common_flags(export_parser)
     export_parser.add_argument("--out", type=Path, default=Path("corpus"), help="Corpus root.")
+    export_parser.add_argument(
+        "--format",
+        choices=["txt", "md"],
+        default="txt",
+        help="Output format for exported book text.",
+    )
     export_parser.set_defaults(handler=run_export_book_text)
 
     sweep_parser = subparsers.add_parser("sweep", help="Run deterministic QA sweep over emitted span sidecars.")
@@ -129,14 +135,28 @@ def run_export_book_text(args) -> int:
     if not pages:
         raise RuntimeError(f"No pages found in canonical corpus: {pages_path}")
 
-    text_parts: list[str] = []
+    if args.format == "md":
+        text_parts: list[str] = [f"# {book.title or book.book_id}".strip(), ""]
+    else:
+        text_parts = []
+
     for page in sorted(pages, key=lambda p: int(p["page_num"])):
         page_num = int(page["page_num"])
+        printed_page = page.get("printed_page")
+        display_page = page_num if printed_page in (None, "") else printed_page
+        scan_relpath = str(page.get("scan_relpath", ""))
         lines = page.get("lines") or []
         page_text = "\n".join(str(line.get("text", "")) for line in lines if str(line.get("text", "")).strip())
-        text_parts.append(f"# Page {page_num}\n{page_text}".strip())
+        if args.format == "md":
+            text_parts.append(f"## Page {display_page} (scan: {scan_relpath})".rstrip())
+            text_parts.append(page_text.strip())
+            text_parts.append("---")
+            text_parts.append("")
+        else:
+            text_parts.append(f"# Page {page_num}\n{page_text}".strip())
 
-    output_path = corpus_root / "books" / book.book_id / "book.txt"
+    output_name = "book.md" if args.format == "md" else "book.txt"
+    output_path = corpus_root / "books" / book.book_id / output_name
     corpus_overwrite = "always" if args.overwrite == "always" else "never"
     write_text_file(
         output_path,
