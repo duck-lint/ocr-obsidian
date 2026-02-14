@@ -98,7 +98,28 @@ Optional corpus export:
 ```powershell
 python -m ingest export-book-text `
   --book configs/books/sample_book.yaml `
-  --out corpus
+  --out corpus `
+  --format txt
+```
+
+Markdown export:
+
+```powershell
+python -m ingest export-book-text `
+  --book configs/books/sample_book.yaml `
+  --out corpus `
+  --format md
+```
+
+Deterministic QA sweep (read-only against notes/sidecars/corpus):
+
+```powershell
+python -m ingest sweep `
+  --corpus_dir corpus `
+  --sidecars_dir runs/<run_id>/obsidian_staging/<book_id> `
+  --notes_dir runs/<run_id>/obsidian_staging/<book_id> `
+  --out_dir runs/<run_id>/qa `
+  --glob "*.span.json"
 ```
 
 ## Safety Flags
@@ -109,6 +130,8 @@ Relevant commands support:
 - `--overwrite {never|if_same_run|always}` (default: `never`)
 - `--max-pages N`
 - `--run-id <id>`
+
+`sweep` is read-only with respect to emitted notes and frontmatter so QA cannot drift note schema or provenance content. It only reads corpus/pages + sidecars (and optional notes) and writes `qa_report.json` and `qa_report.md` to `--out_dir`.
 
 Overwrite semantics are fail-closed by default:
 
@@ -126,6 +149,7 @@ corpus/
     <book_id>/
       pages.jsonl
       book.txt
+      book.md
 
 runs/
   <run_id>/
@@ -142,6 +166,9 @@ runs/
       <book_id>/
         <note>.md
         <note>.span.json
+    qa/
+      qa_report.json
+      qa_report.md
 ```
 
 ## Obsidian Frontmatter Constraint
