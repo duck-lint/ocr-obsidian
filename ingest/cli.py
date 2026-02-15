@@ -129,7 +129,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Disable sidecar JSON provenance files.",
     )
-    emit_parser.set_defaults(handler=run_emit_obsidian)
+    emit_parser.add_argument(
+        "--no-clean-text",
+        dest="clean_text",
+        action="store_false",
+        help="Disable deterministic OCR text cleanup and paragraph reflow in note body.",
+    )
+    emit_parser.set_defaults(handler=run_emit_obsidian, clean_text=True)
 
     export_parser = subparsers.add_parser("export-book-text", help="Export quick concatenated book text.")
     _add_common_flags(export_parser)

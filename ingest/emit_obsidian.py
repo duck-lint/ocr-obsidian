@@ -10,6 +10,7 @@ import yaml
 
 from .artifacts import write_json_file, write_text_file
 from .config import load_book_config
+from .text_clean import clean_ocr_lines, dehyphenate_linebreaks, reflow_paragraphs
 from .textmap import load_pages_jsonl
 from .utils_paths import find_latest_run_id
 
@@ -118,10 +119,21 @@ def _build_tags_block(tags: list[str]) -> str:
     return "\n".join(f"  - {yaml_quote(tag)}" for tag in unique)
 
 
-def _collect_quote(lines: list[dict[str, Any]], line_ids: list[str]) -> str:
+def _collect_quote_lines(lines: list[dict[str, Any]], line_ids: list[str]) -> list[str]:
     line_by_id = {line["line_id"]: line for line in lines}
     ordered = [line_by_id[line_id]["text"] for line_id in line_ids if line_id in line_by_id]
-    return "\n".join(text for text in ordered if str(text).strip())
+    return [str(text) for text in ordered if str(text).strip()]
+
+
+def _render_quote_text(lines: list[str], *, clean_text: bool) -> str:
+    if not lines:
+        return ""
+    if not clean_text:
+        return "\n".join(line for line in lines if line.strip())
+
+    cleaned = clean_ocr_lines(lines)
+    dehyphenated = dehyphenate_linebreaks(cleaned)
+    return reflow_paragraphs(dehyphenated)
 
 
 def _source_block(
@@ -251,7 +263,8 @@ def run_emit_obsidian(args) -> int:
         lines = page.get("lines") or []
 
         for span in payload.get("spans", []):
-            quote_text = _collect_quote(lines=lines, line_ids=span.get("line_ids", []))
+            quote_lines = _collect_quote_lines(lines=lines, line_ids=span.get("line_ids", []))
+            quote_text = _render_quote_text(quote_lines, clean_text=bool(getattr(args, "clean_text", True)))
             if not quote_text.strip():
                 continue
 

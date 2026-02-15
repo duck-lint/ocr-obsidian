@@ -93,6 +93,9 @@ python -m ingest emit-obsidian `
   --max-pages 3
 ```
 
+`emit-obsidian` cleans OCR quote text deterministically and reflows paragraphs by default.
+Use `--no-clean-text` to keep raw OCR line breaks.
+
 Optional corpus export:
 
 ```powershell
@@ -119,6 +122,7 @@ Relevant commands support:
 - `--overwrite {never|if_same_run|always}` (default: `never`)
 - `--max-pages N`
 - `--run-id <id>`
+- `--no-clean-text` (`emit-obsidian` only)
 
 Overwrite semantics are fail-closed by default:
 
