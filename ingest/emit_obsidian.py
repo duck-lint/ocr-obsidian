@@ -10,7 +10,7 @@ import yaml
 
 from .artifacts import write_json_file, write_text_file
 from .config import load_book_config
-from .text_clean import clean_ocr_lines, dehyphenate_linebreaks, reflow_paragraphs
+from .text_clean import clean_ocr_text
 from .textmap import load_pages_jsonl
 from .utils_paths import find_latest_run_id
 
@@ -130,10 +130,7 @@ def _render_quote_text(lines: list[str], *, clean_text: bool) -> str:
         return ""
     if not clean_text:
         return "\n".join(line for line in lines if line.strip())
-
-    cleaned = clean_ocr_lines(lines)
-    dehyphenated = dehyphenate_linebreaks(cleaned)
-    return reflow_paragraphs(dehyphenated)
+    return clean_ocr_text(lines)
 
 
 def _source_block(

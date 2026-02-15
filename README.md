@@ -93,7 +93,7 @@ python -m ingest emit-obsidian `
   --max-pages 3
 ```
 
-`emit-obsidian` cleans OCR quote text deterministically and reflows paragraphs by default.
+`emit-obsidian` applies deterministic token-level OCR cleanup by default (junk token removal, dehyphenation, and prose reflow).
 Use `--no-clean-text` to keep raw OCR line breaks.
 
 Optional corpus export:
