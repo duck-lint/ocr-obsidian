@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw
 
 from .artifacts import write_json_file, write_jsonl_records
 from .config import load_book_config
+from .page_numbers import apply_printed_page_mode, detect_printed_page, infer_scan_side
 from .types import OcrLine, OcrWord, PageRecord, to_jsonable
 from .utils_paths import (
     OverwriteMode,
@@ -173,43 +174,108 @@ def run_ocr(args) -> int:
     language = str(ocr_cfg.get("language", "eng"))
     psm = int(ocr_cfg.get("psm", 6))
     y_tolerance_px = int(ocr_cfg.get("line_y_tolerance_px", 14))
+    printed_page_detect = bool(getattr(args, "printed_page_detect", True))
+    printed_page_top_band_frac = float(getattr(args, "printed_page_top_band_frac", 0.12))
+    printed_page_min_conf = float(getattr(args, "printed_page_min_conf", 40.0))
+    printed_page_roman_max = int(getattr(args, "printed_page_roman_max", 80))
+    printed_page_roman_min_len = int(getattr(args, "printed_page_roman_min_len", 2))
+    printed_page_arabic_switch_min = int(getattr(args, "printed_page_arabic_switch_min", 10))
+    printed_page_debug = bool(getattr(args, "printed_page_debug", False))
+    printed_page_mode: str = "auto"
 
     page_records: list[dict[str, Any]] = []
     for page_num, image_path in enumerate(image_paths, start=1):
         with Image.open(image_path) as image:
             image = image.convert("RGB")
+            page_width, page_height = image.size
             words = _extract_words(image=image, pytesseract=pytesseract, language=language, psm=psm)
             lines = _group_lines(words=words, page_num=page_num, y_tolerance_px=y_tolerance_px)
             page_text = "\n".join(line.text for line in lines if line.text.strip())
+            scan_relpath = safe_relpath(image_path, book.scans_path)
+
+            printed_page_result = {
+                "printed_page": None,
+                "printed_page_text": None,
+                "printed_page_kind": None,
+            }
+            printed_page_debug_payload: dict[str, Any] = {}
+            if printed_page_detect:
+                side = infer_scan_side(scan_relpath)
+                raw_result, raw_debug = detect_printed_page(
+                    PageRecord(
+                        book_id=book.book_id,
+                        page_num=page_num,
+                        scan_relpath=scan_relpath,
+                        ocr_engine="tesseract+pytesseract",
+                        config={},
+                        words=words,
+                        lines=lines,
+                    ),
+                    page_width=page_width,
+                    page_height=page_height,
+                    top_band_frac=printed_page_top_band_frac,
+                    min_conf=printed_page_min_conf,
+                    roman_min_len=printed_page_roman_min_len,
+                    roman_max_value=printed_page_roman_max,
+                    side=side,
+                    debug=printed_page_debug,
+                )
+                printed_page_result, printed_page_mode = apply_printed_page_mode(
+                    raw_result,
+                    "arabic" if printed_page_mode == "arabic" else "auto",
+                    arabic_switch_min=printed_page_arabic_switch_min,
+                )
+                printed_page_debug_payload = raw_debug
 
             page_record = PageRecord(
                 book_id=book.book_id,
                 page_num=page_num,
-                scan_relpath=safe_relpath(image_path, book.scans_path),
+                scan_relpath=scan_relpath,
                 ocr_engine="tesseract+pytesseract",
                 config={
                     "config_hash": config_hash,
                     "line_y_tolerance_px": y_tolerance_px,
                     "language": language,
                     "psm": psm,
+                    "printed_page_detect": printed_page_detect,
+                    "printed_page_top_band_frac": printed_page_top_band_frac,
+                    "printed_page_min_conf": printed_page_min_conf,
+                    "printed_page_roman_max": printed_page_roman_max,
+                    "printed_page_roman_min_len": printed_page_roman_min_len,
+                    "printed_page_arabic_switch_min": printed_page_arabic_switch_min,
+                    "printed_page_debug": printed_page_debug,
                 },
                 words=words,
                 lines=lines,
+                printed_page=printed_page_result.get("printed_page"),
+                printed_page_text=printed_page_result.get("printed_page_text"),
+                printed_page_kind=printed_page_result.get("printed_page_kind"),
             )
             page_records.append(to_jsonable(page_record))
 
             page_dir = run_root / f"book_{book.book_id}" / f"page_{page_num:04d}"
+            page_text_payload: dict[str, Any] = {
+                "book_id": book.book_id,
+                "page_num": page_num,
+                "scan_relpath": page_record.scan_relpath,
+                "text": page_text,
+                "words": to_jsonable(words),
+                "lines": to_jsonable(lines),
+                "printed_page": page_record.printed_page,
+                "printed_page_text": page_record.printed_page_text,
+                "printed_page_kind": page_record.printed_page_kind,
+                "config_hash": config_hash,
+            }
+            if printed_page_debug and printed_page_detect:
+                page_text_payload["printed_page_debug"] = {
+                    "mode": printed_page_mode,
+                    "result": printed_page_result,
+                    "candidates": printed_page_debug_payload,
+                }
+
             write_json_file(
                 page_dir / "page_text.json",
-                {
-                    "book_id": book.book_id,
-                    "page_num": page_num,
-                    "scan_relpath": page_record.scan_relpath,
-                    "text": page_text,
-                    "words": to_jsonable(words),
-                    "lines": to_jsonable(lines),
-                    "config_hash": config_hash,
-                },
+                page_text_payload,
                 dry_run=args.dry_run,
                 overwrite=args.overwrite,
                 run_root=run_root,

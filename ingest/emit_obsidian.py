@@ -129,21 +129,27 @@ def _source_block(
     book_id: str,
     page_num: int,
     scan_relpath: str,
+    printed_page_text: str | None,
+    printed_page_kind: str | None,
     span: dict[str, Any],
     run_id: str,
     config_hash: str,
 ) -> str:
-    return "\n".join(
-        [
-            f"- book_id: {book_id}",
-            f"- page_num: {page_num}",
-            f"- scan_relpath: {scan_relpath}",
-            f"- span_id: {span['span_id']}",
-            f"- line_ids: {', '.join(span.get('line_ids', []))}",
-            f"- run_id: {run_id}",
-            f"- config_hash: {config_hash}",
-        ]
-    )
+    rows = [
+        f"- book_id: {book_id}",
+        f"- page_num: {page_num}",
+        f"- scan_relpath: {scan_relpath}",
+        f"- span_id: {span['span_id']}",
+        f"- line_ids: {', '.join(span.get('line_ids', []))}",
+        f"- run_id: {run_id}",
+        f"- config_hash: {config_hash}",
+    ]
+    if printed_page_text:
+        if printed_page_kind:
+            rows.append(f"- printed_page: {printed_page_text} ({printed_page_kind})")
+        else:
+            rows.append(f"- printed_page: {printed_page_text}")
+    return "\n".join(rows)
 
 
 def _extract_frontmatter_block(note_content: str) -> str:
@@ -261,6 +267,10 @@ def run_emit_obsidian(args) -> int:
                 book_id=book.book_id,
                 page_num=page_num,
                 scan_relpath=str(page.get("scan_relpath", "")),
+                printed_page_text=(
+                    None if page.get("printed_page_text") in (None, "") else str(page.get("printed_page_text"))
+                ),
+                printed_page_kind=None if page.get("printed_page_kind") in (None, "") else str(page.get("printed_page_kind")),
                 span=span,
                 run_id=run_id,
                 config_hash=config_hash,
@@ -294,19 +304,25 @@ def run_emit_obsidian(args) -> int:
             )
 
             if args.sidecar_json:
+                sidecar_payload: dict[str, Any] = {
+                    "book_id": book.book_id,
+                    "page_num": page_num,
+                    "span_id": span["span_id"],
+                    "line_ids": span.get("line_ids", []),
+                    "trigger_bboxes": span.get("trigger_bboxes", []),
+                    "span_bbox": span.get("span_bbox", []),
+                    "run_id": run_id,
+                    "config_hash": config_hash,
+                    "scan_relpath": page.get("scan_relpath", ""),
+                }
+                if page.get("printed_page_text") not in (None, ""):
+                    sidecar_payload["printed_page"] = str(page.get("printed_page_text"))
+                elif page.get("printed_page") is not None:
+                    sidecar_payload["printed_page"] = str(page.get("printed_page"))
+
                 write_json_file(
                     sidecar_path,
-                    {
-                        "book_id": book.book_id,
-                        "page_num": page_num,
-                        "span_id": span["span_id"],
-                        "line_ids": span.get("line_ids", []),
-                        "trigger_bboxes": span.get("trigger_bboxes", []),
-                        "span_bbox": span.get("span_bbox", []),
-                        "run_id": run_id,
-                        "config_hash": config_hash,
-                        "scan_relpath": page.get("scan_relpath", ""),
-                    },
+                    sidecar_payload,
                     dry_run=args.dry_run,
                     overwrite=args.overwrite,
                     run_root=run_root,

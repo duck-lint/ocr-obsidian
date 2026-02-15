@@ -42,6 +42,55 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_flags(ocr_parser)
     ocr_parser.add_argument("--out", type=Path, default=Path("corpus"), help="Corpus output root.")
     ocr_parser.add_argument("--runs", type=Path, default=Path("runs"), help="Run artifacts root.")
+    ocr_parser.add_argument(
+        "--printed-page-detect",
+        dest="printed_page_detect",
+        action="store_true",
+        default=True,
+        help="Enable deterministic printed-page detection from OCR tokens (default).",
+    )
+    ocr_parser.add_argument(
+        "--no-printed-page-detect",
+        dest="printed_page_detect",
+        action="store_false",
+        help="Disable deterministic printed-page detection from OCR tokens.",
+    )
+    ocr_parser.add_argument(
+        "--printed-page-top-band-frac",
+        type=float,
+        default=0.12,
+        help="Vertical fraction of page treated as header band for printed-page candidates.",
+    )
+    ocr_parser.add_argument(
+        "--printed-page-min-conf",
+        type=float,
+        default=40.0,
+        help="Minimum OCR confidence for printed-page candidates.",
+    )
+    ocr_parser.add_argument(
+        "--printed-page-roman-max",
+        type=int,
+        default=80,
+        help="Maximum Roman numeral value accepted for printed-page detection.",
+    )
+    ocr_parser.add_argument(
+        "--printed-page-roman-min-len",
+        type=int,
+        default=2,
+        help="Minimum Roman token length accepted for printed-page detection.",
+    )
+    ocr_parser.add_argument(
+        "--printed-page-arabic-switch-min",
+        type=int,
+        default=10,
+        help="Arabic page value that switches per-book printed-page mode to arabic-only.",
+    )
+    ocr_parser.add_argument(
+        "--printed-page-debug",
+        action="store_true",
+        default=False,
+        help="Include printed-page candidate/debug payloads in run artifacts.",
+    )
     ocr_parser.set_defaults(handler=run_ocr)
 
     highlights_parser = subparsers.add_parser("detect-highlights", help="Detect highlight candidates.")

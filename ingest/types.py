@@ -51,6 +51,9 @@ class PageRecord:
     config: dict[str, Any]
     words: list[OcrWord]
     lines: list[OcrLine]
+    printed_page: int | None = None
+    printed_page_text: str | None = None
+    printed_page_kind: str | None = None
 
 
 @dataclass(slots=True)
