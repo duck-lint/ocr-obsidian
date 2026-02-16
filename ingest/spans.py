@@ -38,19 +38,59 @@ def _bbox_union(boxes: list[list[int]]) -> list[int]:
     ]
 
 
-def _line_vertical_overlap(line_bbox: list[int], trigger_bbox: list[int]) -> int:
+def _bbox_intersection(line_bbox: list[int], trigger_bbox: list[int]) -> tuple[int, int, int]:
+    x1 = max(line_bbox[0], trigger_bbox[0])
     y1 = max(line_bbox[1], trigger_bbox[1])
+    x2 = min(line_bbox[2], trigger_bbox[2])
     y2 = min(line_bbox[3], trigger_bbox[3])
-    return max(0, y2 - y1)
+    if x2 <= x1 or y2 <= y1:
+        return 0, 0, 0
+    overlap_width = x2 - x1
+    overlap_height = y2 - y1
+    return overlap_width * overlap_height, overlap_width, overlap_height
 
 
-def _select_line_indexes(lines: list[dict[str, Any]], trigger_bbox: list[int]) -> list[int]:
+def _line_matches_trigger(
+    line_bbox: list[int],
+    trigger_bbox: list[int],
+    *,
+    min_overlap_frac: float,
+    min_x_overlap_px: int,
+) -> bool:
+    intersection_area, overlap_width, overlap_height = _bbox_intersection(line_bbox, trigger_bbox)
+    if intersection_area <= 0:
+        return False
+    line_area = max(1, (line_bbox[2] - line_bbox[0]) * (line_bbox[3] - line_bbox[1]))
+    if (intersection_area / line_area) >= min_overlap_frac:
+        return True
+    return overlap_width >= min_x_overlap_px and overlap_height > 0
+
+
+def _select_line_indexes(
+    lines: list[dict[str, Any]],
+    trigger_bbox: list[int],
+    *,
+    min_overlap_frac: float,
+    min_x_overlap_px: int,
+    max_overlap_lines: int,
+) -> list[int]:
     overlaps: list[int] = []
     for idx, line in enumerate(lines):
-        overlap = _line_vertical_overlap(line["bbox"], trigger_bbox)
-        if overlap > 0:
+        if _line_matches_trigger(
+            line["bbox"],
+            trigger_bbox,
+            min_overlap_frac=min_overlap_frac,
+            min_x_overlap_px=min_x_overlap_px,
+        ):
             overlaps.append(idx)
     if overlaps:
+        if len(overlaps) > max_overlap_lines:
+            trigger_center = (trigger_bbox[1] + trigger_bbox[3]) / 2.0
+            nearest_idx = min(
+                overlaps,
+                key=lambda idx: abs(((lines[idx]["bbox"][1] + lines[idx]["bbox"][3]) / 2.0) - trigger_center),
+            )
+            return [nearest_idx]
         return overlaps
 
     trigger_center = (trigger_bbox[1] + trigger_bbox[3]) / 2.0
@@ -62,32 +102,16 @@ def _select_line_indexes(lines: list[dict[str, Any]], trigger_bbox: list[int]) -
 
 
 def _merge_raw_spans(raw_spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
+    deduped: dict[tuple[str, ...], dict[str, Any]] = {}
     for span in raw_spans:
-        current = dict(span)
-        keep_merging = True
-        while keep_merging:
-            keep_merging = False
-            next_merged: list[dict[str, Any]] = []
-            for existing in merged:
-                lines_overlap = bool(set(existing["line_ids"]).intersection(current["line_ids"]))
-                bbox_overlap = _bbox_overlap(existing["span_bbox"], current["span_bbox"]) > 0
-                if lines_overlap or bbox_overlap:
-                    line_ids = sorted(set(existing["line_ids"] + current["line_ids"]))
-                    trigger_bboxes = existing["trigger_bboxes"] + current["trigger_bboxes"]
-                    span_bbox = _bbox_union([existing["span_bbox"], current["span_bbox"]])
-                    current = {
-                        "page_num": current["page_num"],
-                        "line_ids": line_ids,
-                        "trigger_bboxes": trigger_bboxes,
-                        "span_bbox": span_bbox,
-                    }
-                    keep_merging = True
-                else:
-                    next_merged.append(existing)
-            merged = next_merged
-        merged.append(current)
-    return merged
+        key = tuple(span["line_ids"])
+        if key not in deduped:
+            deduped[key] = dict(span)
+            continue
+        existing = deduped[key]
+        existing["trigger_bboxes"] = existing["trigger_bboxes"] + span["trigger_bboxes"]
+        existing["span_bbox"] = _bbox_union([existing["span_bbox"], span["span_bbox"]])
+    return list(deduped.values())
 
 
 def _save_overlay(
@@ -131,6 +155,9 @@ def run_make_spans(args) -> int:
     arg_k_after = getattr(args, "k_after", None)
     k_before = int(arg_k_before if arg_k_before is not None else spans_cfg.get("k_before", 2))
     k_after = int(arg_k_after if arg_k_after is not None else spans_cfg.get("k_after", 2))
+    min_overlap_frac = float(spans_cfg.get("min_overlap_frac", 0.02))
+    min_x_overlap_px = int(spans_cfg.get("min_x_overlap_px", 40))
+    max_overlap_lines = int(spans_cfg.get("max_overlap_lines", 8))
 
     page_candidate_files = sorted(run_root.glob(f"book_{book.book_id}/page_*/highlight_candidates.json"))
     if args.max_pages is not None and args.max_pages > 0:
@@ -152,9 +179,16 @@ def run_make_spans(args) -> int:
         raw_spans: list[dict[str, Any]] = []
         for candidate in payload.get("candidates", []):
             trigger_bbox = [int(v) for v in candidate["bbox"]]
-            trigger_line_indexes = _select_line_indexes(lines, trigger_bbox)
-            start_idx = max(0, min(trigger_line_indexes) - k_before)
-            end_idx = min(len(lines) - 1, max(trigger_line_indexes) + k_after)
+            trigger_line_indexes = _select_line_indexes(
+                lines,
+                trigger_bbox,
+                min_overlap_frac=min_overlap_frac,
+                min_x_overlap_px=min_x_overlap_px,
+                max_overlap_lines=max_overlap_lines,
+            )
+            anchor_idx = sorted(trigger_line_indexes)[len(trigger_line_indexes) // 2]
+            start_idx = max(0, anchor_idx - k_before)
+            end_idx = min(len(lines) - 1, anchor_idx + k_after)
             selected = lines[start_idx : end_idx + 1]
             span_bbox = _bbox_union([line["bbox"] for line in selected])
             raw_spans.append(

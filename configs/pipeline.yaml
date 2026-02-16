@@ -8,10 +8,23 @@ highlights:
   hsv_high: [95, 255, 255]
   min_area: 120
   kernel_size: 5
+  edge_margin_px: 25
+  max_hw_ratio: 3.0
+  max_height_frac: 0.15
+  frame_crop_frac: 0.02
 
 spans:
   k_before: 2
   k_after: 2
+  min_overlap_frac: 0.02
+  min_x_overlap_px: 40
+  max_overlap_lines: 8
 
 emit_obsidian:
   sidecar_json_default: true
+
+qa:
+  min_avg_word_conf: 58.0
+  max_garbage_ratio: 0.22
+  max_pipe_ratio: 0.04
+  min_alpha_ratio: 0.45

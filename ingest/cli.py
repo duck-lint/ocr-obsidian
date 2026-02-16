@@ -9,6 +9,8 @@ from .config import ConfigError
 from .emit_obsidian import run_emit_obsidian
 from .highlights import HighlightDependencyError, run_detect_highlights
 from .ocr import OcrDependencyError, run_ocr
+from .qa_metrics import compute_text_metrics, is_obviously_empty_or_garbage, resolve_qa_thresholds
+from .render_text import render_lines
 from .spans import run_make_spans
 from .textmap import load_pages_jsonl
 from .utils_paths import MissingPathError, OverwriteError
@@ -146,7 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="txt",
         help="Output format for exported book text.",
     )
-    export_parser.set_defaults(handler=run_export_book_text)
+    export_parser.add_argument(
+        "--no-clean-text",
+        dest="clean_text",
+        action="store_false",
+        help="Disable deterministic OCR text cleanup and layout-aware prose rendering.",
+    )
+    export_parser.set_defaults(handler=run_export_book_text, clean_text=True)
 
     return parser
 
@@ -154,7 +162,8 @@ def build_parser() -> argparse.ArgumentParser:
 def run_export_book_text(args) -> int:
     from .config import load_book_config
 
-    book, _pipeline, _config_hash = load_book_config(args.book, args.pipeline)
+    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline)
+    qa_thresholds = resolve_qa_thresholds(pipeline_config)
     corpus_root = Path(args.out)
     pages_path = corpus_root / "books" / book.book_id / "pages.jsonl"
     pages = load_pages_jsonl(pages_path)
@@ -172,7 +181,18 @@ def run_export_book_text(args) -> int:
         display_page = page_num if printed_page in (None, "") else printed_page
         scan_relpath = str(page.get("scan_relpath", ""))
         lines = page.get("lines") or []
-        page_text = "\n".join(str(line.get("text", "")) for line in lines if str(line.get("text", "")).strip())
+        metrics = compute_text_metrics(lines)
+        if is_obviously_empty_or_garbage(metrics, qa_thresholds):
+            avg_conf = metrics.get("avg_word_conf")
+            avg_conf_text = "n/a" if avg_conf is None else f"{float(avg_conf):.1f}"
+            page_text = (
+                f"OCR LOW QUALITY (avg_conf={avg_conf_text}, garbage={float(metrics['garbage_ratio']):.3f}). "
+                f"See scan: {scan_relpath}"
+            )
+        elif bool(getattr(args, "clean_text", True)):
+            page_text = render_lines(lines)
+        else:
+            page_text = "\n".join(str(line.get("text", "")) for line in lines if str(line.get("text", "")).strip())
         if args.format == "md":
             text_parts.append(f"## Page {display_page} (scan: {scan_relpath})".rstrip())
             text_parts.append(page_text.strip())

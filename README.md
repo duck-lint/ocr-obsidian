@@ -93,8 +93,9 @@ python -m ingest emit-obsidian `
   --max-pages 3
 ```
 
-`emit-obsidian` applies deterministic token-level OCR cleanup by default (junk token removal, dehyphenation, and prose reflow).
-Use `--no-clean-text` to keep raw OCR line breaks.
+`emit-obsidian` and `export-book-text` both use the same deterministic token+layout-aware text renderer by default.
+This rendering does not modify canonical raw OCR evidence in `pages.jsonl`.
+Use `--no-clean-text` on either command to keep raw OCR line breaks.
 
 Optional corpus export:
 
@@ -122,7 +123,7 @@ Relevant commands support:
 - `--overwrite {never|if_same_run|always}` (default: `never`)
 - `--max-pages N`
 - `--run-id <id>`
-- `--no-clean-text` (`emit-obsidian` only)
+- `--no-clean-text` (`emit-obsidian`, `export-book-text`)
 
 Overwrite semantics are fail-closed by default:
 

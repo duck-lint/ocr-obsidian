@@ -58,6 +58,31 @@ def _component_bbox(stats_row: np.ndarray) -> list[int]:
     return [x, y, x + w, y + h]
 
 
+def _passes_candidate_shape_filters(
+    bbox: list[int],
+    *,
+    page_width: int,
+    page_height: int,
+    edge_margin_px: int,
+    max_hw_ratio: float,
+    max_height_frac: float,
+) -> bool:
+    x1, y1, x2, y2 = bbox
+    width = max(1, int(x2) - int(x1))
+    height = max(1, int(y2) - int(y1))
+    hw_ratio = height / width
+    height_frac = height / max(1, page_height)
+    near_vertical_edge = x1 <= edge_margin_px or x2 >= (page_width - edge_margin_px)
+
+    if hw_ratio > max_hw_ratio:
+        return False
+    if height_frac > max_height_frac:
+        return False
+    if near_vertical_edge and height_frac > (max_height_frac * 0.6):
+        return False
+    return True
+
+
 def run_detect_highlights(args) -> int:
     cv2 = _load_cv2()
     book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline)
@@ -74,6 +99,10 @@ def run_detect_highlights(args) -> int:
     hsv_high = np.array(cfg.get("hsv_high", [95, 255, 255]), dtype=np.uint8)
     min_area = int(cfg.get("min_area", 120))
     kernel_size = int(cfg.get("kernel_size", 5))
+    edge_margin_px = int(cfg.get("edge_margin_px", 25))
+    max_hw_ratio = float(cfg.get("max_hw_ratio", 3.0))
+    max_height_frac = float(cfg.get("max_height_frac", 0.15))
+    frame_crop_frac = float(cfg.get("frame_crop_frac", 0.02))
     kernel = np.ones((kernel_size, kernel_size), dtype=np.uint8)
 
     processed_pages = 0
@@ -81,9 +110,15 @@ def run_detect_highlights(args) -> int:
         bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
         if bgr is None:
             raise RuntimeError(f"Failed to read image: {image_path}")
+        page_height, page_width = bgr.shape[:2]
 
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, hsv_low, hsv_high)
+        if frame_crop_frac > 0:
+            crop = int(round(page_width * frame_crop_frac))
+            if crop > 0:
+                mask[:, :crop] = 0
+                mask[:, page_width - crop :] = 0
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
@@ -94,6 +129,15 @@ def run_detect_highlights(args) -> int:
             if area < min_area:
                 continue
             bbox = _component_bbox(stats[component_idx])
+            if not _passes_candidate_shape_filters(
+                bbox,
+                page_width=page_width,
+                page_height=page_height,
+                edge_margin_px=edge_margin_px,
+                max_hw_ratio=max_hw_ratio,
+                max_height_frac=max_height_frac,
+            ):
+                continue
             component_mask = labels == component_idx
             hue_values = hsv[:, :, 0][component_mask]
             sat_values = hsv[:, :, 1][component_mask]
@@ -154,6 +198,10 @@ def run_detect_highlights(args) -> int:
                     "hsv_high": hsv_high.tolist(),
                     "min_area": min_area,
                     "kernel_size": kernel_size,
+                    "edge_margin_px": edge_margin_px,
+                    "max_hw_ratio": max_hw_ratio,
+                    "max_height_frac": max_height_frac,
+                    "frame_crop_frac": frame_crop_frac,
                 },
             },
             dry_run=args.dry_run,

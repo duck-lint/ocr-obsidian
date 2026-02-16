@@ -10,7 +10,8 @@ import yaml
 
 from .artifacts import write_json_file, write_text_file
 from .config import load_book_config
-from .text_clean import clean_ocr_text
+from .qa_metrics import compute_text_metrics, is_obviously_empty_or_garbage, resolve_qa_thresholds
+from .render_text import render_lines
 from .textmap import load_pages_jsonl
 from .utils_paths import find_latest_run_id
 
@@ -119,18 +120,24 @@ def _build_tags_block(tags: list[str]) -> str:
     return "\n".join(f"  - {yaml_quote(tag)}" for tag in unique)
 
 
-def _collect_quote_lines(lines: list[dict[str, Any]], line_ids: list[str]) -> list[str]:
+def _collect_quote_lines(lines: list[dict[str, Any]], line_ids: list[str]) -> list[dict[str, Any]]:
     line_by_id = {line["line_id"]: line for line in lines}
-    ordered = [line_by_id[line_id]["text"] for line_id in line_ids if line_id in line_by_id]
-    return [str(text) for text in ordered if str(text).strip()]
+    return [line_by_id[line_id] for line_id in line_ids if line_id in line_by_id]
 
 
-def _render_quote_text(lines: list[str], *, clean_text: bool) -> str:
+def _render_quote_text(lines: list[dict[str, Any]], *, clean_text: bool) -> str:
     if not lines:
         return ""
     if not clean_text:
-        return "\n".join(line for line in lines if line.strip())
-    return clean_ocr_text(lines)
+        return "\n".join(str(line.get("text", "")) for line in lines if str(line.get("text", "")).strip())
+    return render_lines(lines)
+
+
+def _low_quality_quote_placeholder(metrics: dict[str, Any], scan_relpath: str) -> str:
+    avg_conf = metrics.get("avg_word_conf")
+    avg_conf_text = "n/a" if avg_conf is None else f"{float(avg_conf):.1f}"
+    garbage = float(metrics.get("garbage_ratio", 0.0))
+    return f"OCR LOW QUALITY (avg_conf={avg_conf_text}, garbage={garbage:.3f}). See scan: {scan_relpath}"
 
 
 def _source_block(
@@ -226,7 +233,8 @@ def smoke_check_note_render(template_path: Path = Path("templates/obsidian_note.
 
 
 def run_emit_obsidian(args) -> int:
-    book, _pipeline_config, config_hash = load_book_config(args.book, args.pipeline)
+    book, pipeline_config, config_hash = load_book_config(args.book, args.pipeline)
+    qa_thresholds = resolve_qa_thresholds(pipeline_config)
     runs_root = Path(args.runs)
     run_id = args.run_id or find_latest_run_id(runs_root, book.book_id, required_filename="spans.json")
     if not run_id:
@@ -261,7 +269,11 @@ def run_emit_obsidian(args) -> int:
 
         for span in payload.get("spans", []):
             quote_lines = _collect_quote_lines(lines=lines, line_ids=span.get("line_ids", []))
-            quote_text = _render_quote_text(quote_lines, clean_text=bool(getattr(args, "clean_text", True)))
+            metrics = compute_text_metrics(quote_lines)
+            if is_obviously_empty_or_garbage(metrics, qa_thresholds):
+                quote_text = _low_quality_quote_placeholder(metrics, str(page.get("scan_relpath", "")))
+            else:
+                quote_text = _render_quote_text(quote_lines, clean_text=bool(getattr(args, "clean_text", True)))
             if not quote_text.strip():
                 continue
 
