@@ -77,8 +77,60 @@ def load_pipeline_config(pipeline_path: Path | None) -> dict[str, Any]:
     return _deep_merge(DEFAULT_PIPELINE_CONFIG, loaded)
 
 
-def load_book_config(book_path: Path, pipeline_path: Path | None) -> tuple[BookConfig, dict[str, Any], str]:
+def apply_cli_overrides(pipeline_config: dict[str, Any], cli_overrides: dict[str, Any]) -> dict[str, Any]:
+    """
+    Apply CLI overrides onto the loaded pipeline config.
+    Precedence: built-in defaults < pipeline YAML < CLI overrides.
+
+    Args:
+        pipeline_config: Base pipeline configuration
+        cli_overrides: Dictionary mapping dotted paths to override values
+                      Example: {"ocr.psm": 3, "highlights.min_area": 200}
+
+    Returns:
+        Updated pipeline configuration with CLI overrides applied
+    """
+    if not cli_overrides:
+        return pipeline_config
+
+    # Deep copy to avoid mutating the input
+    updated: dict[str, Any] = {}
+    for section, section_config in pipeline_config.items():
+        if isinstance(section_config, dict):
+            updated[section] = dict(section_config)
+        else:
+            updated[section] = section_config
+
+    for key, value in cli_overrides.items():
+        if value is None:
+            continue
+
+        parts = key.split(".")
+        if len(parts) != 2:
+            continue
+
+        section, param = parts
+        if section not in updated:
+            updated[section] = {}
+
+        if not isinstance(updated[section], dict):
+            updated[section] = {}
+
+        updated[section][param] = value
+
+    return updated
+
+
+def load_book_config(
+    book_path: Path,
+    pipeline_path: Path | None,
+    cli_overrides: dict[str, Any] | None = None
+) -> tuple[BookConfig, dict[str, Any], str]:
     pipeline_config = load_pipeline_config(pipeline_path)
+
+    if cli_overrides:
+        pipeline_config = apply_cli_overrides(pipeline_config, cli_overrides)
+
     raw = _load_yaml(book_path)
 
     book_id = str(raw.get("book_id", "")).strip()

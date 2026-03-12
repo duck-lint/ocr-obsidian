@@ -200,6 +200,114 @@ Frontmatter rendering smoke check:
 python scripts/frontmatter_smoke_check.py
 ```
 
+## Tuning Workflow
+
+The pipeline supports tuning OCR, highlight detection, QA, and span selection settings through:
+
+1. **Named Scenarios** - Pre-configured tuning profiles for common use cases
+2. **CLI Overrides** - Direct command-line control of individual settings
+3. **YAML Configuration** - Base settings in `configs/pipeline.yaml`
+
+Configuration precedence: `built-in defaults < pipeline YAML < CLI overrides`.
+
+### Running Multiple Tuning Scenarios
+
+To compare OCR results across multiple scenarios on the same sample pages:
+
+```powershell
+scripts/tune_sample.ps1 -MaxPages 3
+```
+
+This runs all default scenarios (baseline, conservative_text, messy_scan_rescue, highlight_sensitive) and outputs separate runs for comparison.
+
+Run specific scenarios:
+
+```powershell
+scripts/tune_sample.ps1 -Scenarios @("baseline", "messy_scan_rescue") -MaxPages 5
+```
+
+Each scenario produces complete artifacts in `runs/<timestamp>_<scenario>/`:
+- `page_text.json` - OCR results
+- `page_overlay.png` - OCR visualization
+- `highlight_mask.png` - Highlight detection mask
+- `highlights_overlay.png` - Highlight visualization
+- `spans.json` - Text spans with context
+- `spans_overlay.png` - Span visualization
+
+### Available Scenarios
+
+- **baseline**: Current defaults (no overrides)
+- **conservative_text**: Tighter QA thresholds, fewer false positives
+- **messy_scan_rescue**: More forgiving for noisy/low-confidence scans
+- **highlight_sensitive**: Permissive highlight detection for faint markers
+
+### Using Scenarios in Commands
+
+Apply a scenario to any command with `--scenario`:
+
+```powershell
+python -m ingest ocr `
+  --book configs/books/sample_book.yaml `
+  --scenario messy_scan_rescue `
+  --out corpus `
+  --runs runs `
+  --max-pages 3
+```
+
+### CLI Override Flags
+
+Override individual settings directly on the command line. CLI overrides take precedence over both scenario and YAML settings.
+
+**OCR Settings:**
+- `--ocr-psm <int>` - Page segmentation mode (default: 6)
+- `--ocr-language <str>` - Language code (default: "eng")
+- `--ocr-line-y-tolerance-px <int>` - Line grouping Y tolerance (default: 14)
+
+**Highlight Settings:**
+- `--highlight-min-area <int>` - Minimum area threshold (default: 120)
+- `--highlight-kernel-size <int>` - Morphological kernel size (default: 5)
+- `--highlight-edge-margin-px <int>` - Edge margin filter (default: 25)
+- `--highlight-max-hw-ratio <float>` - Max height/width ratio (default: 3.0)
+- `--highlight-max-height-frac <float>` - Max height fraction (default: 0.15)
+
+**QA Settings:**
+- `--qa-min-avg-word-conf <float>` - Min average word confidence (default: 58.0)
+- `--qa-max-garbage-ratio <float>` - Max garbage ratio (default: 0.22)
+- `--qa-max-pipe-ratio <float>` - Max pipe character ratio (default: 0.04)
+- `--qa-min-alpha-ratio <float>` - Min alpha character ratio (default: 0.45)
+
+**Span Settings:**
+- `--span-min-overlap-frac <float>` - Min overlap fraction (default: 0.02)
+- `--span-min-x-overlap-px <int>` - Min X overlap in pixels (default: 40)
+- `--span-max-overlap-lines <int>` - Max overlap lines (default: 8)
+
+### Combining Scenarios and CLI Overrides
+
+Start with a scenario and tweak individual settings:
+
+```powershell
+python -m ingest ocr `
+  --book configs/books/sample_book.yaml `
+  --scenario messy_scan_rescue `
+  --ocr-psm 3 `
+  --qa-min-avg-word-conf 45.0 `
+  --out corpus `
+  --runs runs `
+  --max-pages 3
+```
+
+Or override without a scenario:
+
+```powershell
+python -m ingest detect-highlights `
+  --book configs/books/sample_book.yaml `
+  --highlight-min-area 80 `
+  --highlight-kernel-size 3 `
+  --runs runs `
+  --run-id <run_id> `
+  --max-pages 3
+```
+
 ## Current TODOs
 
 - PDF ingestion support (v0 currently supports image folders only).

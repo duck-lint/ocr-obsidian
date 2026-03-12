@@ -158,7 +158,12 @@ def _save_overlay_image(
 
 def run_ocr(args) -> int:
     pytesseract = _load_pytesseract()
-    book, pipeline_config, config_hash = load_book_config(args.book, args.pipeline)
+
+    # Import here to avoid circular import
+    from .cli import _extract_cli_overrides
+    cli_overrides = _extract_cli_overrides(args)
+
+    book, pipeline_config, config_hash = load_book_config(args.book, args.pipeline, cli_overrides)
 
     run_id = args.run_id or utc_run_id()
     run_root = (Path(args.runs) / run_id).resolve()

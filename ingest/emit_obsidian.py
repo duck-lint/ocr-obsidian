@@ -233,7 +233,11 @@ def smoke_check_note_render(template_path: Path = Path("templates/obsidian_note.
 
 
 def run_emit_obsidian(args) -> int:
-    book, pipeline_config, config_hash = load_book_config(args.book, args.pipeline)
+    # Import here to avoid circular import
+    from .cli import _extract_cli_overrides
+    cli_overrides = _extract_cli_overrides(args)
+
+    book, pipeline_config, config_hash = load_book_config(args.book, args.pipeline, cli_overrides)
     qa_thresholds = resolve_qa_thresholds(pipeline_config)
     runs_root = Path(args.runs)
     run_id = args.run_id or find_latest_run_id(runs_root, book.book_id, required_filename="spans.json")
