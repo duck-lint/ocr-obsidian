@@ -131,7 +131,11 @@ def _save_overlay(
 
 
 def run_make_spans(args) -> int:
-    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline)
+    # Import here to avoid circular import
+    from .cli import _extract_cli_overrides
+    cli_overrides = _extract_cli_overrides(args)
+
+    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline, cli_overrides)
     runs_root = Path(args.runs)
     run_id = args.run_id or find_latest_run_id(
         runs_root, book.book_id, required_filename="highlight_candidates.json"

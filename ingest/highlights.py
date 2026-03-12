@@ -85,7 +85,12 @@ def _passes_candidate_shape_filters(
 
 def run_detect_highlights(args) -> int:
     cv2 = _load_cv2()
-    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline)
+
+    # Import here to avoid circular import
+    from .cli import _extract_cli_overrides
+    cli_overrides = _extract_cli_overrides(args)
+
+    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline, cli_overrides)
 
     run_id = args.run_id or utc_run_id()
     run_root = (Path(args.runs) / run_id).resolve()

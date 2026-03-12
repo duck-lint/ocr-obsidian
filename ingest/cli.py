@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import traceback
 from pathlib import Path
+from typing import Any
 
 from .artifacts import write_text_file
 from .config import ConfigError
@@ -16,6 +17,161 @@ from .textmap import load_pages_jsonl
 from .utils_paths import MissingPathError, OverwriteError
 
 
+def _add_ocr_override_flags(parser: argparse.ArgumentParser) -> None:
+    """Add CLI flags for overriding OCR-related settings."""
+    parser.add_argument("--ocr-psm", type=int, default=None, help="Override OCR page segmentation mode.")
+    parser.add_argument("--ocr-language", type=str, default=None, help="Override OCR language.")
+    parser.add_argument(
+        "--ocr-line-y-tolerance-px",
+        type=int,
+        default=None,
+        help="Override OCR line grouping Y tolerance in pixels.",
+    )
+
+
+def _add_highlight_override_flags(parser: argparse.ArgumentParser) -> None:
+    """Add CLI flags for overriding highlight detection settings."""
+    parser.add_argument("--highlight-min-area", type=int, default=None, help="Override highlight min area threshold.")
+    parser.add_argument(
+        "--highlight-kernel-size",
+        type=int,
+        default=None,
+        help="Override highlight morphological kernel size.",
+    )
+    parser.add_argument(
+        "--highlight-edge-margin-px",
+        type=int,
+        default=None,
+        help="Override highlight edge margin filter in pixels.",
+    )
+    parser.add_argument(
+        "--highlight-max-hw-ratio",
+        type=float,
+        default=None,
+        help="Override highlight max height-to-width ratio filter.",
+    )
+    parser.add_argument(
+        "--highlight-max-height-frac",
+        type=float,
+        default=None,
+        help="Override highlight max height fraction of page.",
+    )
+
+
+def _add_qa_override_flags(parser: argparse.ArgumentParser) -> None:
+    """Add CLI flags for overriding QA metric thresholds."""
+    parser.add_argument(
+        "--qa-min-avg-word-conf",
+        type=float,
+        default=None,
+        help="Override QA min average word confidence threshold.",
+    )
+    parser.add_argument(
+        "--qa-max-garbage-ratio",
+        type=float,
+        default=None,
+        help="Override QA max garbage ratio threshold.",
+    )
+    parser.add_argument(
+        "--qa-max-pipe-ratio",
+        type=float,
+        default=None,
+        help="Override QA max pipe character ratio threshold.",
+    )
+    parser.add_argument(
+        "--qa-min-alpha-ratio",
+        type=float,
+        default=None,
+        help="Override QA min alpha character ratio threshold.",
+    )
+
+
+def _add_span_override_flags(parser: argparse.ArgumentParser) -> None:
+    """Add CLI flags for overriding span selection settings."""
+    parser.add_argument(
+        "--span-min-overlap-frac",
+        type=float,
+        default=None,
+        help="Override span min overlap fraction for line matching.",
+    )
+    parser.add_argument(
+        "--span-min-x-overlap-px",
+        type=int,
+        default=None,
+        help="Override span min X overlap in pixels for line matching.",
+    )
+    parser.add_argument(
+        "--span-max-overlap-lines",
+        type=int,
+        default=None,
+        help="Override span max overlap lines before filtering.",
+    )
+
+
+def _extract_cli_overrides(args) -> dict[str, Any]:
+    """
+    Extract CLI override values from parsed arguments.
+
+    Returns a dictionary mapping dotted config paths to override values.
+    Only includes non-None values.
+
+    If --scenario is provided, start with scenario overrides and apply
+    explicit CLI flags on top (CLI flags take precedence over scenario).
+    """
+    from .scenarios import get_scenario
+
+    overrides: dict[str, Any] = {}
+
+    # Start with scenario overrides if specified
+    scenario = getattr(args, "scenario", None)
+    if scenario:
+        try:
+            overrides.update(get_scenario(scenario))
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
+
+    # Apply explicit CLI overrides (these take precedence over scenario)
+    # OCR overrides
+    if getattr(args, "ocr_psm", None) is not None:
+        overrides["ocr.psm"] = args.ocr_psm
+    if getattr(args, "ocr_language", None) is not None:
+        overrides["ocr.language"] = args.ocr_language
+    if getattr(args, "ocr_line_y_tolerance_px", None) is not None:
+        overrides["ocr.line_y_tolerance_px"] = args.ocr_line_y_tolerance_px
+
+    # Highlight overrides
+    if getattr(args, "highlight_min_area", None) is not None:
+        overrides["highlights.min_area"] = args.highlight_min_area
+    if getattr(args, "highlight_kernel_size", None) is not None:
+        overrides["highlights.kernel_size"] = args.highlight_kernel_size
+    if getattr(args, "highlight_edge_margin_px", None) is not None:
+        overrides["highlights.edge_margin_px"] = args.highlight_edge_margin_px
+    if getattr(args, "highlight_max_hw_ratio", None) is not None:
+        overrides["highlights.max_hw_ratio"] = args.highlight_max_hw_ratio
+    if getattr(args, "highlight_max_height_frac", None) is not None:
+        overrides["highlights.max_height_frac"] = args.highlight_max_height_frac
+
+    # QA overrides
+    if getattr(args, "qa_min_avg_word_conf", None) is not None:
+        overrides["qa.min_avg_word_conf"] = args.qa_min_avg_word_conf
+    if getattr(args, "qa_max_garbage_ratio", None) is not None:
+        overrides["qa.max_garbage_ratio"] = args.qa_max_garbage_ratio
+    if getattr(args, "qa_max_pipe_ratio", None) is not None:
+        overrides["qa.max_pipe_ratio"] = args.qa_max_pipe_ratio
+    if getattr(args, "qa_min_alpha_ratio", None) is not None:
+        overrides["qa.min_alpha_ratio"] = args.qa_min_alpha_ratio
+
+    # Span overrides
+    if getattr(args, "span_min_overlap_frac", None) is not None:
+        overrides["spans.min_overlap_frac"] = args.span_min_overlap_frac
+    if getattr(args, "span_min_x_overlap_px", None) is not None:
+        overrides["spans.min_x_overlap_px"] = args.span_min_x_overlap_px
+    if getattr(args, "span_max_overlap_lines", None) is not None:
+        overrides["spans.max_overlap_lines"] = args.span_max_overlap_lines
+
+    return overrides
+
+
 def _add_common_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--book", required=True, type=Path, help="Path to the book config YAML.")
     parser.add_argument(
@@ -23,6 +179,12 @@ def _add_common_flags(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=Path("configs/pipeline.yaml"),
         help="Path to pipeline config YAML.",
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Named tuning scenario (baseline, conservative_text, messy_scan_rescue, highlight_sensitive).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print actions without writing files.")
     parser.add_argument(
@@ -41,6 +203,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     ocr_parser = subparsers.add_parser("ocr", help="Run OCR spine and build canonical pages JSONL.")
     _add_common_flags(ocr_parser)
+    _add_ocr_override_flags(ocr_parser)
+    _add_qa_override_flags(ocr_parser)
     ocr_parser.add_argument("--out", type=Path, default=Path("corpus"), help="Corpus output root.")
     ocr_parser.add_argument("--runs", type=Path, default=Path("runs"), help="Run artifacts root.")
     ocr_parser.add_argument(
@@ -96,11 +260,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     highlights_parser = subparsers.add_parser("detect-highlights", help="Detect highlight candidates.")
     _add_common_flags(highlights_parser)
+    _add_highlight_override_flags(highlights_parser)
     highlights_parser.add_argument("--runs", type=Path, default=Path("runs"), help="Run artifacts root.")
     highlights_parser.set_defaults(handler=run_detect_highlights)
 
     spans_parser = subparsers.add_parser("make-spans", help="Create text spans from highlights + OCR lines.")
     _add_common_flags(spans_parser)
+    _add_span_override_flags(spans_parser)
     spans_parser.add_argument("--runs", type=Path, default=Path("runs"), help="Run artifacts root.")
     spans_parser.add_argument("--corpus", type=Path, default=Path("corpus"), help="Corpus root.")
     spans_parser.add_argument("--k-before", type=int, default=2, help="Context lines to include before triggers.")
@@ -162,7 +328,8 @@ def build_parser() -> argparse.ArgumentParser:
 def run_export_book_text(args) -> int:
     from .config import load_book_config
 
-    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline)
+    cli_overrides = _extract_cli_overrides(args)
+    book, pipeline_config, _config_hash = load_book_config(args.book, args.pipeline, cli_overrides)
     qa_thresholds = resolve_qa_thresholds(pipeline_config)
     corpus_root = Path(args.out)
     pages_path = corpus_root / "books" / book.book_id / "pages.jsonl"
