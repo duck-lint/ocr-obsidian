@@ -93,7 +93,14 @@ def apply_cli_overrides(pipeline_config: dict[str, Any], cli_overrides: dict[str
     if not cli_overrides:
         return pipeline_config
 
-    updated = dict(pipeline_config)
+    # Deep copy to avoid mutating the input
+    updated: dict[str, Any] = {}
+    for section, section_config in pipeline_config.items():
+        if isinstance(section_config, dict):
+            updated[section] = dict(section_config)
+        else:
+            updated[section] = section_config
+
     for key, value in cli_overrides.items():
         if value is None:
             continue
