@@ -1,0 +1,641 @@
+{
+  "repository_summary": {
+    "repo": "duck-lint/ocr-obsidian",
+    "description": "A Python 3.11+ CLI-first OCR ingestion pipeline that converts scanned book page images into a canonical JSONL corpus and highlight-triggered Obsidian markdown excerpt notes. The pipeline is four-phase (OCR → Highlight Detection → Span Selection → Note Emission), driven by YAML configuration with a three-tier precedence system (built-in defaults < YAML < CLI overrides), and enforces fail-closed write semantics, deterministic output, and frontmatter schema validation.",
+    "primary_languages": ["Python"],
+    "automation_languages": ["PowerShell"],
+    "key_dependencies": ["pytesseract", "Pillow", "opencv-python-headless", "PyYAML", "numpy"],
+    "approximate_scope": "~1,500 lines of Python across 17 modules (13 core + 4 utility/support), 6 unit test files, 2 PowerShell automation scripts, 1 Python smoke-check script, 2 YAML config files, 1 Markdown template"
+  },
+  "atomic_skills": [
+    {
+      "skill": "Designing multi-phase CLI pipelines with explicit command routing",
+      "evidence_basis": {
+        "files": ["ingest/cli.py", "ingest/__main__.py"],
+        "description": "Implements 5 subcommands (ocr, detect-highlights, make-spans, emit-obsidian, export-book-text) using argparse subparsers with per-command handler dispatch via set_defaults(handler=...). Each phase has its own argument set and entry point function."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing three-tier configuration precedence (hardcoded defaults < YAML < CLI overrides)",
+      "evidence_basis": {
+        "files": ["ingest/config.py", "ingest/cli.py"],
+        "description": "DEFAULT_PIPELINE_CONFIG provides hardcoded baseline, load_pipeline_config() merges YAML on top via _deep_merge(), and apply_cli_overrides() applies dotted-path CLI flags last. Tested in test_config.py with 12 unit tests covering precedence, missing sections, and invalid keys."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing deep-merge logic for nested configuration dictionaries",
+      "evidence_basis": {
+        "files": ["ingest/config.py:53-61"],
+        "description": "_deep_merge() recursively merges nested dicts, preferring override values while preserving non-overridden keys at all nesting depths."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Designing named tuning scenario profiles as configuration overlays",
+      "evidence_basis": {
+        "files": ["ingest/scenarios.py"],
+        "description": "SCENARIOS dict defines 4 named profiles (baseline, conservative_text, messy_scan_rescue, highlight_sensitive) as dotted-path override dictionaries. get_scenario() returns defensive copies. Tested in test_scenarios.py with 12 tests covering structure, values, copy isolation, key format, and type correctness."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Wrapping Tesseract OCR via pytesseract with structured word/line extraction",
+      "evidence_basis": {
+        "files": ["ingest/ocr.py:46-79"],
+        "description": "_extract_words() calls pytesseract.image_to_data() and parses the raw dict output into typed OcrWord dataclass objects, filtering by confidence >= 0, non-empty text, and positive bounding box dimensions."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing Y-center clustering for OCR word-to-line grouping",
+      "evidence_basis": {
+        "files": ["ingest/ocr.py:95-127"],
+        "description": "_group_lines() clusters words by vertical center using a configurable y_tolerance_px parameter. Cluster centers are recalculated incrementally. Words are sorted left-to-right within each cluster to form OcrLine objects with merged bounding boxes."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing HSV color-space filtering for highlight region detection",
+      "evidence_basis": {
+        "files": ["ingest/highlights.py:86-219"],
+        "description": "run_detect_highlights() converts BGR→HSV, applies cv2.inRange with configurable HSV bounds, then morphological close+open with configurable kernel, followed by 8-connectivity connected components analysis. Each candidate gets mean H/S/V color statistics."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing shape-based spatial filters for image region candidates",
+      "evidence_basis": {
+        "files": ["ingest/highlights.py:61-83"],
+        "description": "_passes_candidate_shape_filters() rejects candidates by height-to-width ratio, height fraction of page, and proximity to vertical edges. Edge-adjacent candidates get a stricter height_frac threshold (60% of max). Tested in test_highlights.py."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Computing bounding box overlap metrics for spatial line-to-highlight matching",
+      "evidence_basis": {
+        "files": ["ingest/spans.py:22-66"],
+        "description": "_line_matches_trigger() uses a dual-criteria match: either intersection_area/line_area >= min_overlap_frac, or x_overlap >= min_x_overlap_px with any y_overlap. Both thresholds are configurable. Tested in test_spans.py for edge cases like vertical stripe triggers."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing context-window expansion around matched text lines",
+      "evidence_basis": {
+        "files": ["ingest/spans.py:133-255"],
+        "description": "run_make_spans() expands matched trigger lines by k_before/k_after context lines, clamps to page boundaries, and merges overlapping spans by deduplicating on line_id tuples while computing union bounding boxes."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing span deduplication by composite key with metadata merging",
+      "evidence_basis": {
+        "files": ["ingest/spans.py:104-114"],
+        "description": "_merge_raw_spans() deduplicates spans using tuple(line_ids) as the key, merging trigger_bboxes lists and computing union span_bbox for duplicates."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing deterministic OCR text cleanup with token-level junk filtering",
+      "evidence_basis": {
+        "files": ["ingest/render_text.py"],
+        "description": "_token_is_junk() applies 7 distinct rejection rules based on pipe characters, backslashes, single non-alphanumeric chars, known OCR spew patterns (_LOW_CONF_SPEW), short low-confidence tokens, and low alpha-ratio tokens. _clean_line() extracts word-level tokens, strips delimiters, and filters via these rules. Tested in test_render_text.py."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing hyphenated line-break rejoining in OCR text",
+      "evidence_basis": {
+        "files": ["ingest/render_text.py:85-100"],
+        "description": "_merge_hyphen_breaks() detects lines ending with hyphens (via regex) followed by lowercase-starting next lines, strips the hyphen and leading punctuation, and joins them without space. Tested in test_render_text.py."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing paragraph reflow from OCR line breaks using continuation heuristics",
+      "evidence_basis": {
+        "files": ["ingest/render_text.py:103-128"],
+        "description": "render_lines() groups cleaned lines into paragraphs using _looks_continuation(), which checks for sentence-terminal punctuation and lowercase continuation. List markers (numbered or bulleted) break paragraphs. Blocks are joined with double newlines."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Computing text quality metrics from OCR output (confidence, alpha ratio, garbage ratio)",
+      "evidence_basis": {
+        "files": ["ingest/qa_metrics.py"],
+        "description": "compute_text_metrics() calculates char_count, line_count, avg_word_conf, alpha_ratio (letters/alphanumeric), garbage_ratio (non-alnum-nonspace/nonspace), and pipe_ratio. is_obviously_empty_or_garbage() applies configurable composite thresholds including a combined confidence+garbage check."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing fail-closed overwrite policies for file I/O",
+      "evidence_basis": {
+        "files": ["ingest/utils_paths.py:75-95", "ingest/artifacts.py"],
+        "description": "check_write_allowed() enforces three policies: 'never' (always fail if exists), 'if_same_run' (allow only under active run_root via is_subpath check), 'always' (remove and proceed). Default is 'never'. All write functions (text, JSON, JSONL) route through this guard."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing dry-run mode across all file-writing operations",
+      "evidence_basis": {
+        "files": ["ingest/artifacts.py", "ingest/ocr.py", "ingest/highlights.py", "ingest/spans.py", "ingest/emit_obsidian.py"],
+        "description": "Every write function checks dry_run and prints the intended action instead of writing. The --dry-run CLI flag propagates through all pipeline phases."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Designing typed dataclass models with slots for OCR domain objects",
+      "evidence_basis": {
+        "files": ["ingest/types.py"],
+        "description": "Defines 6 @dataclass(slots=True) classes: BookConfig, OcrWord, OcrLine, PageRecord, HighlightCandidate, Span. Uses Python 3.10+ union syntax (Path | None), field(default_factory=...), and a recursive to_jsonable() serializer."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing recursive dataclass-to-JSON serialization",
+      "evidence_basis": {
+        "files": ["ingest/types.py:75-84"],
+        "description": "to_jsonable() handles dataclasses (via asdict), Path objects (to str), nested dicts, and lists recursively, producing JSON-safe primitives."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing YAML frontmatter schema validation for generated Markdown notes",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:19-90, 171-209"],
+        "description": "OBSIDIAN_SCHEMA_KEYS defines a whitelist of ~60 allowed frontmatter keys. _validate_frontmatter_schema_keys() extracts top-level YAML keys from the --- delimited block and rejects any key not in the whitelist. _assert_frontmatter_yaml() parses the block with yaml.safe_load to verify syntactic validity."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing YAML-safe quoting for frontmatter value injection",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:96-98"],
+        "description": "yaml_quote() uses json.dumps() to produce double-quoted scalars, ensuring special characters (quotes, colons, etc.) are escaped safely for YAML frontmatter."
+      },
+      "evidence_strength": "moderate",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing template-based Markdown note generation with placeholder substitution",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:106-110", "templates/obsidian_note.md"],
+        "description": "_render_template() performs simple {{key}} → value substitution on a Markdown template. The template defines Obsidian-compatible frontmatter and body sections (Quote, Commentary, Source)."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing provenance metadata tracking for generated artifacts",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:143-168, 332-355", "ingest/ocr.py:236-258"],
+        "description": "Every generated note includes source provenance (book_id, page_num, scan_relpath, span_id, line_ids, run_id, config_hash). Optional sidecar JSON files duplicate this for machine consumption. Page records include config_hash (SHA-256 of merged config)."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Computing deterministic configuration hashes for reproducibility tracking",
+      "evidence_basis": {
+        "files": ["ingest/config.py:186-188"],
+        "description": "load_book_config() computes a SHA-256 hash (truncated to 16 hex chars) of the combined book + pipeline config serialized as sorted JSON. This hash is embedded in every output artifact."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing natural sort for filesystem paths with embedded numbers",
+      "evidence_basis": {
+        "files": ["ingest/utils_paths.py:27-40"],
+        "description": "natural_sort_paths() splits filenames by digit boundaries using regex, casting numeric segments to int for correct ordering (e.g., page_2 before page_10)."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing image file discovery with extension filtering and validation",
+      "evidence_basis": {
+        "files": ["ingest/utils_paths.py:43-51"],
+        "description": "discover_images() validates directory existence, filters by IMAGE_EXTENSIONS set (.png, .jpg, .jpeg, .tif, .tiff), and returns naturally sorted paths. Raises descriptive MissingPathError for missing/empty/non-directory paths."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing subpath safety checks for write-scope enforcement",
+      "evidence_basis": {
+        "files": ["ingest/utils_paths.py:54-59"],
+        "description": "is_subpath() uses Path.resolve().relative_to() to verify a target path is under an allowed parent, preventing writes outside the active run directory in if_same_run mode."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing JSONL reading and writing for streaming record I/O",
+      "evidence_basis": {
+        "files": ["ingest/textmap.py", "ingest/artifacts.py:43-59"],
+        "description": "load_pages_jsonl() reads UTF-8-sig encoded JSONL (one JSON object per line). write_jsonl_records() writes with explicit newline-per-record and Unix line endings."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing Roman numeral parsing with strict subtractive-form validation",
+      "evidence_basis": {
+        "files": ["ingest/page_numbers.py:22-54"],
+        "description": "roman_to_int() validates against a strict regex for canonical Roman form, then parses with subtractive pair detection. Only standard subtractives (iv, ix, xl, xc, cd, cm) are accepted. Tested with both valid and invalid forms in test_page_numbers.py."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing printed page number detection from OCR tokens using spatial scoring",
+      "evidence_basis": {
+        "files": ["ingest/page_numbers.py:145-271"],
+        "description": "detect_printed_page() extracts candidates from a configurable top-band of the page, scores them by preferred_region (left/right/neutral based on scan side), edge_position, confidence, and vertical location. Supports both Arabic and Roman numerals with Arabic prioritized. Returns structured result with optional debug payload."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing a state machine for page numbering mode transitions (auto → arabic-only)",
+      "evidence_basis": {
+        "files": ["ingest/page_numbers.py:274-294"],
+        "description": "apply_printed_page_mode() transitions from 'auto' mode (accepting both Roman and Arabic) to 'arabic' mode once an Arabic page number exceeds arabic_switch_min threshold. In arabic mode, Roman detections are suppressed. Tested in test_page_numbers.py."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing scan-side inference from filename conventions",
+      "evidence_basis": {
+        "files": ["ingest/page_numbers.py:57-63"],
+        "description": "infer_scan_side() parses _L/_R filename suffixes to determine left/right page position, feeding into spatial preference scoring for page number detection."
+      },
+      "evidence_strength": "moderate",
+      "transferable": true
+    },
+    {
+      "skill": "Designing canonical vs. ephemeral output directory conventions",
+      "evidence_basis": {
+        "files": ["README.md:138-161", "ingest/cli.py", "ingest/ocr.py"],
+        "description": "corpus/ holds immutable canonical data (pages.jsonl, fail-closed writes). runs/ holds ephemeral per-run artifacts (page overlays, highlight masks, spans, staging). This separation is enforced by overwrite policies and documented in README."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Generating diagnostic overlay visualizations for OCR and highlight debugging",
+      "evidence_basis": {
+        "files": ["ingest/ocr.py:130-156", "ingest/highlights.py:162-175", "ingest/spans.py:235-251"],
+        "description": "Each pipeline phase produces overlay images: OCR draws word boxes (blue) and line boxes (red) with IDs; highlights draws detection rectangles (red) with IDs; spans draws span boxes (green) and trigger boxes (red). Uses PIL.ImageDraw and cv2.rectangle/putText."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Writing PowerShell automation scripts for multi-step pipeline orchestration",
+      "evidence_basis": {
+        "files": ["scripts/dev_smoke_test.ps1", "scripts/tune_sample.ps1"],
+        "description": "dev_smoke_test.ps1 orchestrates 5 pipeline phases with parameterized BookConfig, MaxPages, DryRun, and RunId. Includes Invoke-Step helper with error checking ($LASTEXITCODE). tune_sample.ps1 iterates over multiple scenarios with timestamped run IDs and per-scenario artifact isolation."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Designing multi-scenario comparison workflows for parameter tuning",
+      "evidence_basis": {
+        "files": ["scripts/tune_sample.ps1", "ingest/scenarios.py"],
+        "description": "tune_sample.ps1 runs identical pages through multiple named scenarios, producing separate timestamped run directories (${timestamp}_${scenario}) for side-by-side artifact comparison. Each scenario applies different OCR/highlight/QA/span thresholds."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing graceful dependency error handling with actionable install messages",
+      "evidence_basis": {
+        "files": ["ingest/ocr.py:23-39", "ingest/highlights.py:20-31", "ingest/cli.py:389-409"],
+        "description": "OcrDependencyError and HighlightDependencyError catch ImportError and missing binary (shutil.which) with specific pip install instructions. CLI main() maps each error type to a distinct exit code (3-6)."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing structured CLI exit codes for different error categories",
+      "evidence_basis": {
+        "files": ["ingest/cli.py:385-409"],
+        "description": "main() returns exit code 0 (success), 1 (unexpected error), 2 (not implemented), 3 (config/missing path), 4 (overwrite refused), 5 (OCR dependency missing), 6 (highlight dependency missing)."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Writing focused unit tests with helper factories for domain objects",
+      "evidence_basis": {
+        "files": ["ingest/test_page_numbers.py", "ingest/test_render_text.py", "ingest/test_spans.py", "ingest/test_highlights.py", "ingest/test_config.py", "ingest/test_scenarios.py"],
+        "description": "6 test files using unittest. Test helpers (_word, _line, _page) create domain objects concisely. Tests cover: config precedence (12 tests), page number detection with side preference and mode switching (7 tests), highlight shape filters (2 tests), text rendering junk removal and hyphen joining (3 tests), scenario structure/values/isolation (12 tests), span selection edge cases (1 test)."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing smoke-check validation for template rendering pipelines",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:212-232", "scripts/frontmatter_smoke_check.py"],
+        "description": "smoke_check_note_render() renders the template with sample data including edge cases (escaped quotes), then validates frontmatter schema keys and YAML syntax. A standalone script (frontmatter_smoke_check.py) provides a quick CLI validation path."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing max-pages pagination for development and testing workflows",
+      "evidence_basis": {
+        "files": ["ingest/cli.py:197", "ingest/ocr.py:173-174", "ingest/highlights.py:99-100", "ingest/spans.py:167-168"],
+        "description": "Every pipeline phase accepts --max-pages N to slice input to the first N items, enabling fast iteration during development without processing entire books."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing UTC-based timestamped run identifiers for artifact isolation",
+      "evidence_basis": {
+        "files": ["ingest/utils_paths.py:23-24"],
+        "description": "utc_run_id() generates YYYYMMDDTHHmmssZ timestamps from UTC time, used as run directory names to ensure chronological sorting and uniqueness."
+      },
+      "evidence_strength": "moderate",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing latest-run discovery by required file presence",
+      "evidence_basis": {
+        "files": ["ingest/utils_paths.py:105-117"],
+        "description": "find_latest_run_id() scans runs directories in reverse name order, checking for required file (e.g., highlight_candidates.json or spans.json) under the expected book/page structure. Used as fallback when --run-id is not specified."
+      },
+      "evidence_strength": "moderate",
+      "transferable": true
+    },
+    {
+      "skill": "Separating raw OCR evidence from rendered output",
+      "evidence_basis": {
+        "files": ["README.md:96-98", "ingest/cli.py:300-306", "ingest/emit_obsidian.py"],
+        "description": "The canonical corpus (pages.jsonl) preserves raw OCR word/line data. Downstream rendering (emit-obsidian, export-book-text) applies deterministic text cleanup optionally via --no-clean-text, keeping evidence and presentation layers distinct."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Using YAML-backed schema contracts for pipeline and book configuration",
+      "evidence_basis": {
+        "files": ["configs/pipeline.yaml", "configs/books/sample_book.yaml", "ingest/config.py"],
+        "description": "Pipeline behavior is defined in pipeline.yaml with section-scoped keys (ocr, highlights, spans, qa, emit_obsidian). Book metadata in sample_book.yaml includes bibliographic fields, paths, and note defaults. Both are loaded via yaml.safe_load with explicit validation."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing relative path resolution anchored to config file location",
+      "evidence_basis": {
+        "files": ["ingest/config.py:64-71"],
+        "description": "_resolve_path() resolves relative paths relative to the config file's parent directory, supporting both absolute and relative path specifications in YAML configs."
+      },
+      "evidence_strength": "moderate",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing QA-gated content with degraded-mode fallback text",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:136-140, 277-278", "ingest/cli.py:352-358"],
+        "description": "When OCR quality metrics fail thresholds, notes receive a structured placeholder ('OCR LOW QUALITY (avg_conf=X, garbage=Y). See scan: path') instead of garbled text. Both emit-obsidian and export-book-text use this pattern."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Implementing safe filename sanitization for generated output files",
+      "evidence_basis": {
+        "files": ["ingest/emit_obsidian.py:101-103"],
+        "description": "_sanitize_filename() replaces non-alphanumeric characters (except dot, hyphen, underscore) with underscores and strips leading/trailing dots and underscores."
+      },
+      "evidence_strength": "moderate",
+      "transferable": true
+    },
+    {
+      "skill": "Structuring a Python package with __main__.py CLI entry point",
+      "evidence_basis": {
+        "files": ["ingest/__main__.py", "ingest/__init__.py"],
+        "description": "The package is invocable via python -m ingest. __main__.py imports and calls the CLI main() function. __init__.py exports __version__."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    },
+    {
+      "skill": "Using .gitignore to enforce canonical/ephemeral directory boundaries",
+      "evidence_basis": {
+        "files": [".gitignore"],
+        "description": ".gitignore excludes corpus/* and runs/* (ephemeral/generated content) while preserving .gitkeep sentinel files, enforcing that only source code and configuration are version-controlled."
+      },
+      "evidence_strength": "strong",
+      "transferable": true
+    }
+  ],
+  "skill_clusters": [
+    {
+      "cluster": "OCR Pipeline Engineering",
+      "skills": [
+        "Wrapping Tesseract OCR via pytesseract with structured word/line extraction",
+        "Implementing Y-center clustering for OCR word-to-line grouping",
+        "Implementing deterministic OCR text cleanup with token-level junk filtering",
+        "Implementing hyphenated line-break rejoining in OCR text",
+        "Implementing paragraph reflow from OCR line breaks using continuation heuristics",
+        "Computing text quality metrics from OCR output (confidence, alpha ratio, garbage ratio)",
+        "Implementing QA-gated content with degraded-mode fallback text"
+      ]
+    },
+    {
+      "cluster": "Computer Vision / Image Processing",
+      "skills": [
+        "Implementing HSV color-space filtering for highlight region detection",
+        "Implementing shape-based spatial filters for image region candidates",
+        "Generating diagnostic overlay visualizations for OCR and highlight debugging"
+      ]
+    },
+    {
+      "cluster": "Spatial Geometry / Bounding Box Logic",
+      "skills": [
+        "Computing bounding box overlap metrics for spatial line-to-highlight matching",
+        "Implementing context-window expansion around matched text lines",
+        "Implementing span deduplication by composite key with metadata merging",
+        "Implementing printed page number detection from OCR tokens using spatial scoring"
+      ]
+    },
+    {
+      "cluster": "Configuration and Schema Design",
+      "skills": [
+        "Implementing three-tier configuration precedence (hardcoded defaults < YAML < CLI overrides)",
+        "Implementing deep-merge logic for nested configuration dictionaries",
+        "Designing named tuning scenario profiles as configuration overlays",
+        "Using YAML-backed schema contracts for pipeline and book configuration",
+        "Computing deterministic configuration hashes for reproducibility tracking",
+        "Implementing relative path resolution anchored to config file location"
+      ]
+    },
+    {
+      "cluster": "CLI Tooling Design",
+      "skills": [
+        "Designing multi-phase CLI pipelines with explicit command routing",
+        "Implementing structured CLI exit codes for different error categories",
+        "Implementing graceful dependency error handling with actionable install messages",
+        "Implementing max-pages pagination for development and testing workflows",
+        "Implementing dry-run mode across all file-writing operations",
+        "Structuring a Python package with __main__.py CLI entry point"
+      ]
+    },
+    {
+      "cluster": "Filesystem Safety and I/O Discipline",
+      "skills": [
+        "Implementing fail-closed overwrite policies for file I/O",
+        "Implementing subpath safety checks for write-scope enforcement",
+        "Implementing JSONL reading and writing for streaming record I/O",
+        "Designing canonical vs. ephemeral output directory conventions",
+        "Using .gitignore to enforce canonical/ephemeral directory boundaries",
+        "Implementing safe filename sanitization for generated output files",
+        "Implementing natural sort for filesystem paths with embedded numbers",
+        "Implementing image file discovery with extension filtering and validation"
+      ]
+    },
+    {
+      "cluster": "Knowledge System / Obsidian Integration",
+      "skills": [
+        "Implementing YAML frontmatter schema validation for generated Markdown notes",
+        "Implementing YAML-safe quoting for frontmatter value injection",
+        "Implementing template-based Markdown note generation with placeholder substitution",
+        "Implementing provenance metadata tracking for generated artifacts",
+        "Separating raw OCR evidence from rendered output"
+      ]
+    },
+    {
+      "cluster": "Testing and Validation",
+      "skills": [
+        "Writing focused unit tests with helper factories for domain objects",
+        "Implementing smoke-check validation for template rendering pipelines"
+      ]
+    },
+    {
+      "cluster": "Automation and Workflow Scripting",
+      "skills": [
+        "Writing PowerShell automation scripts for multi-step pipeline orchestration",
+        "Designing multi-scenario comparison workflows for parameter tuning",
+        "Implementing UTC-based timestamped run identifiers for artifact isolation",
+        "Implementing latest-run discovery by required file presence"
+      ]
+    },
+    {
+      "cluster": "Domain Modeling",
+      "skills": [
+        "Designing typed dataclass models with slots for OCR domain objects",
+        "Implementing recursive dataclass-to-JSON serialization",
+        "Implementing Roman numeral parsing with strict subtractive-form validation",
+        "Implementing a state machine for page numbering mode transitions (auto → arabic-only)",
+        "Implementing scan-side inference from filename conventions"
+      ]
+    }
+  ],
+  "ambiguities_or_borderline_calls": [
+    {
+      "item": "OpenCV usage depth",
+      "note": "The highlight detection uses OpenCV for HSV filtering, morphology, and connected components, but stays within a standard color segmentation pattern. The skill is clearly demonstrated but does not extend to more advanced CV techniques (contour analysis, feature matching, ML-based detection). Claiming 'computer vision engineering' broadly would be an overclaim."
+    },
+    {
+      "item": "Template engine complexity",
+      "note": "_render_template() is a simple {{key}} string replacement, not a full template engine (no loops, conditionals, filters). This is a deliberate design choice for transparency, but 'template engine design' would overstate the scope."
+    },
+    {
+      "item": "Testing coverage breadth",
+      "note": "37 unit tests across 6 files cover the core logic well, but integration tests and end-to-end tests exist only as PowerShell scripts (not automated in CI). The testing skill is real but the test automation infrastructure is minimal."
+    },
+    {
+      "item": "PowerShell vs. cross-platform scripting",
+      "note": "Automation scripts are PowerShell-only, which is Windows/PowerShell-centric. The README install examples also use PowerShell syntax. This is a deliberate OS choice, not a limitation per se, but claims about 'cross-platform automation' would not be supported."
+    },
+    {
+      "item": "No CI/CD pipeline present",
+      "note": "There are no GitHub Actions workflows, Makefiles, or CI configuration files in the repository. Build/test automation exists only as local scripts. Claims about CI/CD skills would not be supported by this repo."
+    },
+    {
+      "item": "PDF support not implemented",
+      "note": "README lists PDF ingestion as a TODO. Only image-folder input is implemented. No PDF-related skill should be claimed."
+    },
+    {
+      "item": "YAML frontmatter schema scope",
+      "note": "OBSIDIAN_SCHEMA_KEYS contains ~60 keys that appear to come from a broader Obsidian vault schema not fully represented in this repo. The validation logic is clearly implemented, but the full schema context lives outside this repository."
+    }
+  ],
+  "overclaim_risks": [
+    {
+      "risk": "Claiming 'machine learning' or 'AI' from Tesseract usage",
+      "mitigation": "Tesseract is used as a black-box OCR engine. The skill is in wrapping and post-processing its output, not in ML model design or training."
+    },
+    {
+      "risk": "Claiming 'full-stack development' from this pipeline",
+      "mitigation": "This is a CLI-only tool with no web UI, API server, or database. The skills are in pipeline engineering, not full-stack development."
+    },
+    {
+      "risk": "Claiming 'advanced computer vision' from HSV filtering",
+      "mitigation": "The CV work is competent but uses standard techniques (color filtering, morphology, connected components). More advanced claims would need evidence of ML-based detection, feature matching, or custom algorithms."
+    }
+  ],
+  "transferable_signal_notes": [
+    {
+      "signal": "The three-tier config precedence pattern, fail-closed write policies, and dry-run mode are broadly transferable to any CLI tool or pipeline design.",
+      "context": "These are infrastructure-level design patterns, not domain-specific."
+    },
+    {
+      "signal": "The scenario-based tuning workflow (named profiles as config overlays with side-by-side comparison) is transferable to any parametric system requiring systematic experimentation.",
+      "context": "Applicable to ML hyperparameter tuning, build configuration, deployment profiles, etc."
+    },
+    {
+      "signal": "The provenance tracking pattern (config hash, run ID, source metadata in every artifact) is transferable to any system requiring reproducibility and audit trails.",
+      "context": "Relevant for data pipelines, scientific computing, compliance-sensitive workflows."
+    },
+    {
+      "signal": "The canonical/ephemeral output separation is a general-purpose data architecture pattern.",
+      "context": "Relevant for any system distinguishing authoritative data from derived/experimental artifacts."
+    }
+  ],
+  "dedupe_notes_for_cross_repo_merge": [
+    {
+      "note": "Skills like 'YAML-backed configuration', 'CLI design with argparse', 'dataclass modeling', 'dry-run mode', and 'fail-closed writes' may appear in other repos by the same author. When deduplicating, treat this repo as strong evidence for the OCR-specific variants and moderate evidence for the general patterns.",
+      "dedup_keys": ["yaml_config_precedence", "cli_argparse_subcommands", "fail_closed_writes", "dry_run_mode", "dataclass_modeling", "provenance_tracking"]
+    },
+    {
+      "note": "PowerShell automation scripting may recur. This repo demonstrates orchestration scripts but not advanced PowerShell (modules, remoting, DSC). Keep the claim scoped to 'pipeline orchestration scripts'.",
+      "dedup_keys": ["powershell_automation"]
+    },
+    {
+      "note": "Unit testing with helper factories is a general skill. The domain-specific aspect here (OCR word/line factories) distinguishes it from generic test writing.",
+      "dedup_keys": ["unit_testing", "test_factories"]
+    }
+  ],
+  "main_takeaway": "This repository demonstrates a disciplined, schema-driven approach to building a multi-phase OCR-to-knowledge-note pipeline. The strongest skill signals cluster in five areas. First, pipeline architecture with explicit phase separation and canonical data flow. Second, configuration design with three-tier precedence and named scenario overlays. Third, filesystem safety engineering with fail-closed writes and overwrite policies. Fourth, OCR post-processing with confidence-aware text cleanup and quality gating. Fifth, spatial geometry for highlight-to-text matching with context expansion. Additionally, the Obsidian note generation layer demonstrates frontmatter schema validation and provenance tracking. The implementation consistently favors explicit contracts, deterministic behavior, and reproducibility over convenience or speed, which aligns with the broader trajectory described in the user's career context."
+}
