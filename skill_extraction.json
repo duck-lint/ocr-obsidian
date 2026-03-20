@@ -564,7 +564,7 @@
   "ambiguities_or_borderline_calls": [
     {
       "item": "OpenCV usage depth",
-      "note": "The highlight detection uses OpenCV for HSV filtering, morphology, and connected components, but stays within a standard color-segmentation pattern. The skill is clearly demonstrated but does not extend to more advanced CV techniques (contour analysis, feature matching, ML-based detection). Claiming 'computer vision engineering' broadly would be an overclaim."
+      "note": "The highlight detection uses OpenCV for HSV filtering, morphology, and connected components, but stays within a standard color segmentation pattern. The skill is clearly demonstrated but does not extend to more advanced CV techniques (contour analysis, feature matching, ML-based detection). Claiming 'computer vision engineering' broadly would be an overclaim."
     },
     {
       "item": "Template engine complexity",
@@ -637,5 +637,5 @@
       "dedup_keys": ["unit_testing", "test_factories"]
     }
   ],
-  "main_takeaway": "This repository demonstrates a disciplined, schema-driven approach to building a multi-phase OCR-to-knowledge-note pipeline. The strongest skill signals are in: (1) pipeline architecture with explicit phase separation and canonical data flow; (2) configuration design with three-tier precedence and scenario overlays; (3) filesystem safety engineering with fail-closed writes and overwrite policies; (4) OCR post-processing with confidence-aware text cleanup and quality gating; (5) spatial geometry for highlight-to-text matching; and (6) Obsidian-compatible note generation with frontmatter schema validation and provenance tracking. The implementation favors explicit contracts, deterministic behavior, and reproducibility over convenience or speed, which is consistent with the broader trajectory described in the user's career context."
+  "main_takeaway": "This repository demonstrates a disciplined, schema-driven approach to building a multi-phase OCR-to-knowledge-note pipeline. The strongest skill signals cluster in five areas. First, pipeline architecture with explicit phase separation and canonical data flow. Second, configuration design with three-tier precedence and named scenario overlays. Third, filesystem safety engineering with fail-closed writes and overwrite policies. Fourth, OCR post-processing with confidence-aware text cleanup and quality gating. Fifth, spatial geometry for highlight-to-text matching with context expansion. Additionally, the Obsidian note generation layer demonstrates frontmatter schema validation and provenance tracking. The implementation consistently favors explicit contracts, deterministic behavior, and reproducibility over convenience or speed, which aligns with the broader trajectory described in the user's career context."
 }
